@@ -20,6 +20,7 @@ function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) 
 }
 
 interface FlowState {
+  homeLink: { shownName: string; href: string } | null;
   records: RecordItem[];
   tags: TagItem[];
   threads: ThreadItem[];
@@ -62,6 +63,7 @@ interface FlowState {
   setActiveBranchParentId: (id: string | null) => void;
   setQuickSelectedThreadId: (id: string | null) => void;
   setSelectedDate: (date: string | null) => void;
+  setHomeLink: (link: { shownName: string; href: string } | null) => void;
   resetToDefaultData: () => void;
 }
 
@@ -263,6 +265,7 @@ export const useFlowStore = create<FlowState>()(
       records: defaultRecords,
       tags: defaultTags,
       threads: defaultThreads,
+      homeLink: null,
 
       activeTab: 'record',
       selectedThreadId: null,
@@ -505,6 +508,8 @@ export const useFlowStore = create<FlowState>()(
 
       setSelectedDate: (date) => set({ selectedDate: date }),
 
+      setHomeLink: (homeLink) => set({ homeLink }),
+
       resetToDefaultData: () => {
         set({
           records: defaultRecords,
@@ -516,6 +521,7 @@ export const useFlowStore = create<FlowState>()(
           selectedDate: null,
           fromReviewDate: false,
           fromThreadDetailId: null,
+          homeLink: null,
         });
       },
     }),

@@ -5,6 +5,7 @@ import { RecordInputBar } from './RecordInputBar';
 import { ThreadPickerModal } from '../../components/modals/ThreadPickerModal';
 import { TagPickerModal } from '../../components/modals/TagPickerModal';
 import { SettingsModal } from '../../components/modals/SettingsModal';
+import { HomeLinkModal } from '../../components/modals/HomeLinkModal';
 import { getRelativeDayMeta } from '../../utils/dateUtils';
 import { EnrichedRecordItem } from '../../types';
 import {
@@ -16,6 +17,7 @@ import {
   Settings,
   ArrowDown,
   Sparkles,
+  Link,
 } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
@@ -41,6 +43,8 @@ export const RecordView = () => {
   const backToThreadDetail = useFlowStore((s) => s.backToThreadDetail);
   const resetToTodayRecord = useFlowStore((s) => s.resetToTodayRecord);
   const updateRecord = useFlowStore((s) => s.updateRecord);
+  const homeLink = useFlowStore((s) => s.homeLink);
+  const setHomeLink = useFlowStore((s) => s.setHomeLink);
 
   const parentThread = fromThreadDetailId
     ? threads.find((t) => t.id === fromThreadDetailId)
@@ -60,7 +64,36 @@ export const RecordView = () => {
   const [targetRecordForTag, setTargetRecordForTag] = useState<{ id: string; currentTagId: string | null } | null>(null);
 
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [homeLinkModalOpen, setHomeLinkModalOpen] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggered = useRef(false);
   const r2Enabled = isR2Configured() && loadR2Settings().enabled;
+
+  const openHomeLink = () => {
+    if (!homeLink) return;
+    const rawHref = homeLink.href.trim();
+    const href = /^https?:\/\//i.test(rawHref) ? rawHref : `https://${rawHref}`;
+    if (!/^https?:\/\//i.test(href)) return;
+
+    // Use a real anchor so desktop browsers and Capacitor can apply their
+    // normal external-link handling (including opening the system browser).
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    anchor.click();
+  };
+  const startLinkPress = () => {
+    longPressTriggered.current = false;
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      setHomeLinkModalOpen(true);
+    }, 550);
+  };
+  const endLinkPress = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+  };
 
   // Multi-day chronological grouping with hierarchical tree construction
   const dayGroups: DayGroup[] = useMemo(() => {
@@ -251,6 +284,18 @@ export const RecordView = () => {
 
         {/* Action Group: Sync / Settings / Review */}
         <div className="flex items-center gap-1.5">
+          {homeLink && (
+            <button
+              onPointerDown={startLinkPress}
+              onPointerUp={endLinkPress}
+              onPointerCancel={endLinkPress}
+              onPointerLeave={endLinkPress}
+              onClick={(event) => { if (longPressTriggered.current) { event.preventDefault(); return; } openHomeLink(); }}
+              className="min-h-9 max-w-28 flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900 px-2.5 rounded-lg hover:bg-blue-50 bg-blue-50/70 border border-blue-200/70 transition-colors"
+              title="点击打开链接，长按编辑名称和地址"
+            ><Link className="w-3.5 h-3.5 flex-shrink-0" /><span className="font-medium truncate">{homeLink.shownName}</span></button>
+          )}
+          {!homeLink && <button onClick={() => setHomeLinkModalOpen(true)} className="min-h-9 px-2 text-[11px] text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50" title="添加主页链接">+ 链接</button>}
           {/* Cloud Sync Status / Open Settings */}
           <button
             onClick={() => setSettingsModalOpen(true)}
@@ -382,6 +427,12 @@ export const RecordView = () => {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
+      />
+      <HomeLinkModal
+        isOpen={homeLinkModalOpen}
+        initialValue={homeLink}
+        onClose={() => setHomeLinkModalOpen(false)}
+        onConfirm={(value) => { setHomeLink(value); setHomeLinkModalOpen(false); }}
       />
     </div>
   );
