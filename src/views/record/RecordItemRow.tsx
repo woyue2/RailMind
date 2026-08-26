@@ -16,6 +16,7 @@ interface RecordItemRowProps {
 export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   item,
   level,
+  isLastChild = false,
   onOpenThreadPicker,
   onOpenTagPicker,
 }) => {
@@ -103,21 +104,34 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
     <div className="relative">
       {/*
         Node Row Container:
-        方案 B: 极简虚线树 (Minimal Dashed)
-        - 每一层子分支由左侧父容器的连续虚线导轨引导
-        - 当前子节点通过水平虚线分支延伸连接
+        - 每一层子分支由左侧父容器的虚线导轨引导 (border-l)
+        - 当前子节点通过水平虚线分支延伸连接 (├─ 或 └─)
       */}
       <div className="relative">
         {/* Horizontal Dashed Branch Connector for level > 0 */}
         {level > 0 && (
-          <div
-            className="absolute pointer-events-none border-b-[1.5px] border-dashed border-slate-300"
-            style={{
-              left: '-12px',
-              top: '18px',
-              width: '10px',
-            }}
-          />
+          <>
+            <div
+              className="absolute pointer-events-none border-b-[1.5px] border-dashed border-slate-300"
+              style={{
+                left: '-12px',
+                top: '17px',
+                width: '10px',
+              }}
+            />
+            {/* If last child, mask the container's left border below the branch point to form a clean └─ corner */}
+            {isLastChild && (
+              <div
+                className="absolute pointer-events-none bg-white"
+                style={{
+                  left: '-14px',
+                  top: '18px',
+                  bottom: '0px',
+                  width: '4px',
+                }}
+              />
+            )}
+          </>
         )}
 
         {/* Row Content Card - scoped with 'group' so hover only triggers this row's actions */}
