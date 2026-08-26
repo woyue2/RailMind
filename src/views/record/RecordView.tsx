@@ -1,15 +1,33 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { RecordItemRow } from './RecordItemRow';
 import { RecordInputBar } from './RecordInputBar';
 import { ThreadPickerModal } from '../../components/modals/ThreadPickerModal';
 import { TagPickerModal } from '../../components/modals/TagPickerModal';
 import { SettingsModal } from '../../components/modals/SettingsModal';
-import { formatDateLabel } from '../../utils/dateUtils';
+import { getRelativeDayMeta } from '../../utils/dateUtils';
 import { EnrichedRecordItem } from '../../types';
-import { Calendar, RotateCcw, BookOpen, ArrowLeft, Cloud, Settings } from 'lucide-react';
-import { isSameDay, parseISO } from 'date-fns';
+import {
+  Calendar,
+  RotateCcw,
+  BookOpen,
+  ArrowLeft,
+  Cloud,
+  Settings,
+  ArrowDown,
+  Sparkles,
+} from 'lucide-react';
+import { parseISO, format } from 'date-fns';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
+
+interface DayGroup {
+  dateKey: string;
+  label: string;
+  isToday: boolean;
+  isYesterday: boolean;
+  count: number;
+  roots: EnrichedRecordItem[];
+}
 
 export const RecordView = () => {
   const records = useFlowStore((s) => s.records);
@@ -28,6 +46,12 @@ export const RecordView = () => {
     ? threads.find((t) => t.id === fromThreadDetailId)
     : null;
 
+  // Scroll Container & Anchors
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const bottomAnchorRef = useRef<HTMLDivElement>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const prevRecordCountRef = useRef(records.length);
+
   // Modal State
   const [threadModalOpen, setThreadModalOpen] = useState(false);
   const [targetRecordForThread, setTargetRecordForThread] = useState<{ id: string; text: string } | null>(null);
@@ -38,66 +62,124 @@ export const RecordView = () => {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const r2Enabled = isR2Configured() && loadR2Settings().enabled;
 
-  // Filter records by selected date or today
-  const filteredRecords = useMemo(() => {
-    // If a specific date is selected (from review date click)
-    if (selectedDate) {
-      const target = parseISO(selectedDate);
-      return records.filter((r) => isSameDay(parseISO(r.created_at), target));
-    }
+  // Multi-day chronological grouping with hierarchical tree construction
+  const dayGroups: DayGroup[] = useMemo(() => {
+    // 1. Group records by Date (yyyy-MM-dd)
+    const map = new Map<string, EnrichedRecordItem[]>();
 
-    // Default Main Page behavior: Show Today (or fallback to latest main date if today has 0 entries)
-    const today = new Date();
-    const todayRecords = records.filter((r) => isSameDay(parseISO(r.created_at), today));
-    if (todayRecords.length > 0) return todayRecords;
-
-    // In demo dataset (base date 2026-08-26), filter by the most prominent date with records
-    const targetDay = parseISO('2026-08-26');
-    const demoDayRecords = records.filter((r) => isSameDay(parseISO(r.created_at), targetDay));
-    if (demoDayRecords.length > 0) return demoDayRecords;
-
-    return records.slice(0, 10);
-  }, [records, selectedDate]);
-
-  // Build tree structure for records (roots vs children)
-  const treeData = useMemo(() => {
-    const recordMap = new Map<string, EnrichedRecordItem>();
-
-    // Enrich all records with thread and tag info
-    filteredRecords.forEach((r) => {
-      recordMap.set(r.id, {
-        ...r,
-        thread: threads.find((t) => t.id === r.thread_id),
-        tag: tags.find((t) => t.id === r.tag_id),
-        children: [],
-      });
-    });
-
-    const roots: EnrichedRecordItem[] = [];
-
-    // Construct hierarchy
-    recordMap.forEach((item) => {
-      if (item.parent_id && recordMap.has(item.parent_id)) {
-        recordMap.get(item.parent_id)!.children!.push(item);
-      } else {
-        roots.push(item);
+    records.forEach((r) => {
+      try {
+        const d = parseISO(r.created_at);
+        const dateKey = format(d, 'yyyy-MM-dd');
+        if (!map.has(dateKey)) {
+          map.set(dateKey, []);
+        }
+        map.get(dateKey)!.push({
+          ...r,
+          thread: threads.find((t) => t.id === r.thread_id),
+          tag: tags.find((t) => t.id === r.tag_id),
+          children: [],
+        });
+      } catch {
+        // ignore invalid dates
       }
     });
 
-    // Sort roots chronologically (09:12 -> 09:40 -> 11:15)
-    return roots.sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    // 2. Sort dates in chronological ascending order (oldest date at Top -> newest/today at Bottom)
+    const sortedDateKeys = Array.from(map.keys()).sort(
+      (a, b) => new Date(a).getTime() - new Date(b).getTime()
     );
-  }, [filteredRecords, tags, threads]);
 
-  const activeDateLabel = useMemo(() => {
-    if (filteredRecords.length === 0) return '今天 · 0条';
-    const firstDate = filteredRecords[0].created_at;
-    const label = formatDateLabel(firstDate);
-    return `${label} · ${filteredRecords.length}条`;
-  }, [filteredRecords]);
+    // 3. Construct branch-tree hierarchy within each day
+    const groups: DayGroup[] = sortedDateKeys.map((dateKey) => {
+      const dayRecords = map.get(dateKey) || [];
+      const recordLookup = new Map<string, EnrichedRecordItem>();
 
-  // Handlers for Modals
+      dayRecords.forEach((item) => {
+        recordLookup.set(item.id, item);
+      });
+
+      const roots: EnrichedRecordItem[] = [];
+
+      dayRecords.forEach((item) => {
+        if (item.parent_id && recordLookup.has(item.parent_id)) {
+          recordLookup.get(item.parent_id)!.children!.push(item);
+        } else {
+          roots.push(item);
+        }
+      });
+
+      // Sort roots chronologically (09:12 -> 09:40 -> 16:20)
+      roots.sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
+      const meta = getRelativeDayMeta(dateKey);
+
+      return {
+        dateKey,
+        label: meta.label,
+        isToday: meta.isToday,
+        isYesterday: meta.isYesterday,
+        count: dayRecords.length,
+        roots,
+      };
+    });
+
+    return groups;
+  }, [records, tags, threads]);
+
+  // Total summary of today's records or active context
+  const headerSummary = useMemo(() => {
+    const todayGroup = dayGroups.find((g) => g.isToday);
+    const todayCount = todayGroup ? todayGroup.count : 0;
+    const totalCount = records.length;
+    return { todayCount, totalCount };
+  }, [dayGroups, records]);
+
+  // Initial mount: Anchor to bottom smoothly (Now / Latest record)
+  useLayoutEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, []);
+
+  // When a new record is added, smoothly scroll to bottom
+  useEffect(() => {
+    if (records.length > prevRecordCountRef.current) {
+      bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevRecordCountRef.current = records.length;
+  }, [records.length]);
+
+  // If navigated to a specific date from Review page, scroll to that date group
+  useEffect(() => {
+    if (selectedDate && scrollContainerRef.current) {
+      const targetElement = document.getElementById(`day-group-${selectedDate}`);
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }, [selectedDate]);
+
+  // Handle scroll events to detect when user has scrolled up away from bottom
+  const handleScroll = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    // If scrolled more than 260px above bottom, show the floating "回到此刻" button
+    setShowScrollToBottom(distanceFromBottom > 260);
+  };
+
+  const scrollToBottom = () => {
+    bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (selectedDate) {
+      resetToTodayRecord();
+    }
+  };
+
+  // Modals Handlers
   const handleOpenThreadPicker = (recordId: string, text: string) => {
     setTargetRecordForThread({ id: recordId, text });
     setThreadModalOpen(true);
@@ -123,9 +205,9 @@ export const RecordView = () => {
   return (
     <div className="flex flex-col h-full bg-white relative">
       {/* 1. Header Bar: Date and count + Navigation buttons */}
-      <div className="record-header flex items-center justify-between px-4 py-3.5 border-b border-gray-100 bg-white/95 backdrop-blur-sm sticky top-0 z-10">
+      <div className="record-header flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white/95 backdrop-blur-sm sticky top-0 z-20">
         <div className="flex items-center gap-2">
-          {/* If navigated here from Thread Detail, show Back arrow to that Thread */}
+          {/* Back to Thread or Review if jumped */}
           {fromThreadDetailId ? (
             <button
               onClick={backToThreadDetail}
@@ -136,7 +218,6 @@ export const RecordView = () => {
               <span>{parentThread?.title ? `🔗 ${parentThread.title}` : '思维线'}</span>
             </button>
           ) : fromReviewDate ? (
-            /* If navigated here from Review page's Date section, show prominent Back arrow to Review */
             <button
               onClick={backToReview}
               className="p-1 -ml-1 text-gray-600 hover:text-gray-900 rounded-full hover:bg-gray-100 transition-colors flex items-center gap-1 mr-1"
@@ -147,15 +228,20 @@ export const RecordView = () => {
             </button>
           ) : null}
 
-          <span className="font-semibold text-gray-900 text-sm tracking-tight">
-            {activeDateLabel}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-900 text-sm tracking-tight flex items-center gap-1.5">
+              <span>超电思</span>
+            </span>
+            <span className="text-[11px] text-gray-400 font-medium">
+              今天 {headerSummary.todayCount} 条 · 共 {headerSummary.totalCount} 条
+            </span>
+          </div>
 
           {selectedDate && (
             <button
               onClick={resetToTodayRecord}
-              className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full"
-              title="回到今天所有记录"
+              className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full font-medium transition-colors"
+              title="回到今天最新流"
             >
               <RotateCcw className="w-2.5 h-2.5" />
               回今天
@@ -168,7 +254,7 @@ export const RecordView = () => {
           {/* Cloud Sync Status / Open Settings */}
           <button
             onClick={() => setSettingsModalOpen(true)}
-            className={`min-w-10 min-h-10 p-2 rounded-lg border transition-colors flex items-center justify-center ${
+            className={`min-w-9 min-h-9 p-2 rounded-lg border transition-colors flex items-center justify-center ${
               r2Enabled
                 ? 'text-blue-600 bg-blue-50/80 border-blue-200 hover:bg-blue-100'
                 : 'text-gray-400 bg-gray-50 border-gray-200/60 hover:text-gray-700 hover:bg-gray-100'
@@ -181,7 +267,7 @@ export const RecordView = () => {
           {/* Entry to Review View */}
           <button
             onClick={() => setActiveTab('review')}
-            className="min-h-10 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-3 rounded-lg hover:bg-gray-100 bg-gray-50 border border-gray-200/60 transition-colors"
+            className="min-h-9 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-2.5 rounded-lg hover:bg-gray-100 bg-gray-50 border border-gray-200/60 transition-colors"
             title="打开回顾页"
           >
             <BookOpen className="w-3.5 h-3.5 text-gray-600" />
@@ -190,29 +276,90 @@ export const RecordView = () => {
         </div>
       </div>
 
-      {/* 2. Timeline & Branch Tree List */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
-        {treeData.length === 0 ? (
+      {/* 2. Continuous Multi-Day Timeline Stream (Past at Top -> Now at Bottom) */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-2 py-2 relative scroll-smooth space-y-4"
+      >
+        {dayGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center text-gray-400">
             <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center mb-3 text-gray-300">
               <Calendar className="w-6 h-6" />
             </div>
-            <p className="text-sm font-medium text-gray-500">暂无记录</p>
-            <p className="text-xs text-gray-400 mt-1">在下方输入框写下此刻的想法吧</p>
+            <p className="text-sm font-medium text-gray-500">暂无任何记录</p>
+            <p className="text-xs text-gray-400 mt-1">在下方输入框写下此刻的想法，开启时间流</p>
           </div>
         ) : (
-          treeData.map((item) => (
-            <div key={item.id} className="border-b border-gray-100/70 last:border-b-0 pb-1 mb-1">
-              <RecordItemRow
-                item={item}
-                level={0}
-                onOpenThreadPicker={handleOpenThreadPicker}
-                onOpenTagPicker={handleOpenTagPicker}
-              />
-            </div>
-          ))
+          dayGroups.map((group) => {
+            const isTargetHighlight = selectedDate === group.dateKey;
+
+            return (
+              <div
+                key={group.dateKey}
+                id={`day-group-${group.dateKey}`}
+                className={`day-section rounded-2xl transition-all duration-300 ${
+                  isTargetHighlight ? 'ring-2 ring-blue-400/40 bg-blue-50/20' : ''
+                }`}
+              >
+                {/* Sticky Date Header between Days */}
+                <div className="sticky top-0 z-10 py-1.5 flex items-center justify-between pointer-events-none mb-1">
+                  <div
+                    className="pointer-events-auto flex items-center gap-1.5 px-3 py-1 rounded-full backdrop-blur-md shadow-xs text-[11px] font-medium tracking-tight"
+                    style={{
+                      backgroundColor: 'hsla(35, 55%, 20%, 0.70)',
+                      borderColor: 'hsla(35, 55%, 40%, 0.30)',
+                      borderWidth: '1px',
+                      color: 'hsl(35, 20%, 95%)',
+                    }}
+                  >
+                    <Calendar className="w-3 h-3" style={{ color: 'hsl(35, 65%, 65%)' }} />
+                    <span>{group.label}</span>
+                    <span className="text-[10px] font-mono" style={{ color: 'hsla(35, 55%, 65%, 0.7)' }}>({group.count}条)</span>
+                  </div>
+
+                  {group.isToday && (
+                    <div className="pointer-events-auto text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 border border-amber-500/30 flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5 text-amber-500" />
+                      <span>此刻进行时</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Day's Tree Stream */}
+                <div className="space-y-0.5 pl-1">
+                  {group.roots.map((item) => (
+                    <div key={item.id} className="border-b border-gray-100/70 last:border-b-0 pb-1 mb-1">
+                      <RecordItemRow
+                        item={item}
+                        level={0}
+                        onOpenThreadPicker={handleOpenThreadPicker}
+                        onOpenTagPicker={handleOpenTagPicker}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })
         )}
+
+        {/* Bottom invisible anchor to maintain positioning at Now */}
+        <div ref={bottomAnchorRef} className="h-2" />
       </div>
+
+      {/* Floating Action: Quick Scroll back to Bottom ("回到此刻 / Today") */}
+      {showScrollToBottom && (
+        <div className="absolute right-4 bottom-24 z-30 transition-all duration-200 animate-in fade-in slide-in-from-bottom-2">
+          <button
+            onClick={scrollToBottom}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-bold shadow-xl shadow-amber-500/30 active:scale-95 transition-transform border border-amber-200/40"
+          >
+            <ArrowDown className="w-3.5 h-3.5" />
+            <span>回到此刻 (今天)</span>
+          </button>
+        </div>
+      )}
 
       {/* 3. Bottom Sticky Input Bar (Recent Thread Capsules + Input + Send) */}
       <RecordInputBar />

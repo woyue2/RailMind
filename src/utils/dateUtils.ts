@@ -21,6 +21,68 @@ export function formatDateLabel(isoString: string): string {
   }
 }
 
+export function getRelativeDayMeta(isoStringOrDate: string | Date): {
+  label: string;
+  isToday: boolean;
+  isYesterday: boolean;
+  dateKey: string;
+} {
+  try {
+    const target = typeof isoStringOrDate === 'string' ? parseISO(isoStringOrDate) : isoStringOrDate;
+    const now = new Date();
+    const dateKey = format(target, 'yyyy-MM-dd');
+
+    // Check Today
+    if (isSameDay(target, now)) {
+      return {
+        label: `今天 ${format(target, 'M月d日', { locale: zhCN })}`,
+        isToday: true,
+        isYesterday: false,
+        dateKey,
+      };
+    }
+
+    // Check Yesterday
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    if (isSameDay(target, yesterday)) {
+      return {
+        label: `昨天 ${format(target, 'M月d日', { locale: zhCN })}`,
+        isToday: false,
+        isYesterday: true,
+        dateKey,
+      };
+    }
+
+    // Check Before Yesterday
+    const beforeYesterday = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    if (isSameDay(target, beforeYesterday)) {
+      return {
+        label: `前天 ${format(target, 'M月d日', { locale: zhCN })}`,
+        isToday: false,
+        isYesterday: false,
+        dateKey,
+      };
+    }
+
+    // Standard date label
+    const isCurrentYear = target.getFullYear() === now.getFullYear();
+    const pattern = isCurrentYear ? 'M月d日' : 'yyyy年M月d日';
+    return {
+      label: format(target, pattern, { locale: zhCN }),
+      isToday: false,
+      isYesterday: false,
+      dateKey,
+    };
+  } catch {
+    return {
+      label: String(isoStringOrDate),
+      isToday: false,
+      isYesterday: false,
+      dateKey: '',
+    };
+  }
+}
+
 export function formatSimpleDate(isoString: string): string {
   try {
     return format(parseISO(isoString), 'M月d日', { locale: zhCN });

@@ -1,7 +1,7 @@
 {
-  "name": "思维流 (01flow)",
-  "short_name": "思维流",
-  "description": "极简极速的本地优先单流分支时间轴思考记录工具",
+  "name": "超电思 (Railmind)",
+  "short_name": "超电思",
+  "description": "极简极速的本地优先单流分支时间轴高能思考记录工具",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0A0806",

@@ -72,8 +72,8 @@ export const MobileShell = () => {
           </div>
           <div>
             <h1 className="text-sm font-semibold text-white flex items-center gap-1.5">
-              思维流 (01flow)
-              <span className="text-[10px] text-emerald-400 bg-emerald-950/80 border border-emerald-800/60 px-1.5 py-0.2 rounded font-mono">
+              超电思 (Railmind)
+              <span className="text-[10px] text-amber-400 bg-amber-950/80 border border-amber-800/60 px-1.5 py-0.2 rounded font-mono">
                 App 调试外壳
               </span>
             </h1>

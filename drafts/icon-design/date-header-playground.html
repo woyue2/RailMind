@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>01flow - 日期标头胶囊配色工坊 (Date Header Pill Tuner)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
+    }
+    input[type=range] { accent-color: #F59E0B; }
+    .glass-panel {
+      background: rgba(22, 17, 13, 0.85);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+    }
+  </style>
+</head>
+<body class="bg-[#0A0806] text-amber-50 min-h-screen flex flex-col items-center py-6 px-4">
+
+  <header class="w-full max-w-3xl pb-6 border-b border-amber-950/80 mb-8">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-cyan-400 p-[2px] flex items-center justify-center shadow-xl shadow-amber-500/20">
+        <div class="w-full h-full bg-[#1A140F] rounded-[14px] flex items-center justify-center">
+          <span class="font-mono font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-cyan-300 text-lg">⚡01</span>
+        </div>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-white tracking-tight">日期标头胶囊配色调节工坊</h1>
+        <p class="text-xs text-amber-200/60">调节深浅 · 透明度 · 边框 · 文字颜色 · 实时预览</p>
+      </div>
+    </div>
+  </header>
+
+  <div class="w-full max-w-3xl grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+    <!-- Left: Controls -->
+    <div class="space-y-5">
+
+      <!-- Preset Quick Picks -->
+      <div class="glass-panel p-5 rounded-2xl space-y-3">
+        <h3 class="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+          <span>⚡ 预设快选</span>
+        </h3>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="applyPreset('warm-dark')" class="text-xs px-3 py-2 rounded-xl bg-amber-950/60 border border-amber-700/40 text-amber-200 hover:bg-amber-900/60 transition-colors font-medium">暖橙深色 (Dark Warm)</button>
+          <button onclick="applyPreset('warm-medium')" class="text-xs px-3 py-2 rounded-xl bg-amber-950/60 border border-amber-700/40 text-amber-200 hover:bg-amber-900/60 transition-colors font-medium">暖橙中深 (Medium)</button>
+          <button onclick="applyPreset('warm-light')" class="text-xs px-3 py-2 rounded-xl bg-amber-950/60 border border-amber-700/40 text-amber-200 hover:bg-amber-900/60 transition-colors font-medium">暖橙浅色 (Light)</button>
+          <button onclick="applyPreset('amber-glass')" class="text-xs px-3 py-2 rounded-xl bg-amber-950/60 border border-amber-700/40 text-amber-200 hover:bg-amber-900/60 transition-colors font-medium">琥珀毛玻璃 (Glass)</button>
+          <button onclick="applyPreset('original-gray')" class="text-xs px-3 py-2 rounded-xl bg-gray-800/60 border border-gray-600/40 text-gray-300 hover:bg-gray-700/60 transition-colors font-medium">原版深灰 (Original)</button>
+          <button onclick="applyPreset('railgun-gold')" class="text-xs px-3 py-2 rounded-xl bg-amber-950/60 border border-amber-700/40 text-amber-200 hover:bg-amber-900/60 transition-colors font-medium">超电磁炮金 (Railgun)</button>
+        </div>
+      </div>
+
+      <!-- Fine-Tune Sliders -->
+      <div class="glass-panel p-5 rounded-2xl space-y-4">
+        <h3 class="text-xs font-bold text-amber-300">精细调节面板 (Fine Tune)</h3>
+
+        <!-- BG Hue -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-amber-100">背景色调 (Hue)</span>
+            <span id="hue-label" class="font-mono text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">30</span>
+          </div>
+          <input type="range" id="hue-slider" min="0" max="60" value="30" oninput="updateAll()" class="w-full h-2 bg-amber-950/80 rounded-lg cursor-pointer" />
+          <div class="flex justify-between text-[10px] text-amber-200/40 font-mono"><span>0 (红橙)</span><span>30 (橙)</span><span>60 (黄橙)</span></div>
+        </div>
+
+        <!-- BG Saturation -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-amber-100">饱和度 (Saturation)</span>
+            <span id="sat-label" class="font-mono text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">60%</span>
+          </div>
+          <input type="range" id="sat-slider" min="0" max="100" value="60" oninput="updateAll()" class="w-full h-2 bg-amber-950/80 rounded-lg cursor-pointer" />
+        </div>
+
+        <!-- BG Lightness (深浅核心) -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-amber-100 font-bold">深浅 (Lightness) ← 核心调节</span>
+            <span id="light-label" class="font-mono text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">18%</span>
+          </div>
+          <input type="range" id="light-slider" min="5" max="70" value="18" oninput="updateAll()" class="w-full h-2 bg-amber-950/80 rounded-lg cursor-pointer" />
+          <div class="flex justify-between text-[10px] text-amber-200/40 font-mono"><span>5% (极深)</span><span>18% (深)</span><span>35% (中)</span><span>70% (浅)</span></div>
+        </div>
+
+        <!-- BG Opacity -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-amber-100">背景透明度 (Opacity)</span>
+            <span id="opacity-label" class="font-mono text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">80%</span>
+          </div>
+          <input type="range" id="opacity-slider" min="20" max="100" value="80" oninput="updateAll()" class="w-full h-2 bg-amber-950/80 rounded-lg cursor-pointer" />
+        </div>
+
+        <!-- Border Color Opacity -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-amber-100">边框色强度</span>
+            <span id="border-label" class="font-mono text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">20%</span>
+          </div>
+          <input type="range" id="border-slider" min="0" max="60" value="20" oninput="updateAll()" class="w-full h-2 bg-amber-950/80 rounded-lg cursor-pointer" />
+        </div>
+
+        <!-- Text Color Lightness -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-amber-100">文字亮度</span>
+            <span id="text-label" class="font-mono text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">95%</span>
+          </div>
+          <input type="range" id="text-slider" min="50" max="100" value="95" oninput="updateAll()" class="w-full h-2 bg-amber-950/80 rounded-lg cursor-pointer" />
+        </div>
+
+        <!-- Icon color -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-amber-100">日历图标色调亮度</span>
+            <span id="icon-label" class="font-mono text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">65%</span>
+          </div>
+          <input type="range" id="icon-slider" min="30" max="90" value="65" oninput="updateAll()" class="w-full h-2 bg-amber-950/80 rounded-lg cursor-pointer" />
+        </div>
+
+        <!-- Blur Toggle -->
+        <div class="flex items-center gap-3 pt-1">
+          <span class="text-xs text-amber-100">毛玻璃效果:</span>
+          <button onclick="toggleBlur()" id="blur-btn" class="text-xs px-3 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold">启用</button>
+        </div>
+      </div>
+
+      <!-- CSS Output -->
+      <div class="glass-panel p-5 rounded-2xl space-y-2">
+        <h3 class="text-xs font-bold text-amber-300">CSS Output (复制到 RecordView.tsx)</h3>
+        <pre id="css-output" class="text-[11px] text-amber-100 bg-black/50 p-3 rounded-xl font-mono leading-relaxed overflow-x-auto border border-amber-950 whitespace-pre-wrap"></pre>
+      </div>
+    </div>
+
+    <!-- Right: Live Preview -->
+    <div class="space-y-6">
+
+      <!-- Preview on White BG (light mode / app context) -->
+      <div class="glass-panel p-5 rounded-2xl space-y-3">
+        <h3 class="text-xs font-bold text-white">白底背景预览 (App 内实际效果)</h3>
+        <div class="bg-white rounded-2xl p-4 space-y-4">
+
+          <!-- Date pill: Previous day -->
+          <div class="flex items-center justify-between">
+            <div id="pill-prev" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium tracking-tight">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="icon-prev"><path d="M8 2v3"></path><path d="M16 2v3"></path><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path></svg>
+              <span>8月24日</span>
+              <span class="text-[10px] font-mono" id="count-prev">(1条)</span>
+            </div>
+          </div>
+
+          <!-- Fake record items -->
+          <div class="pl-3 space-y-2">
+            <div class="flex items-start gap-2 text-xs text-gray-600">
+              <span class="text-[11px] font-mono text-gray-400 flex-shrink-0 pt-0.5">14:15</span>
+              <span>又想换方向了，还是得脚踏实地</span>
+            </div>
+          </div>
+
+          <div class="border-t border-gray-100 my-2"></div>
+
+          <!-- Date pill: Yesterday -->
+          <div class="flex items-center justify-between">
+            <div id="pill-yesterday" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium tracking-tight">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="icon-yesterday"><path d="M8 2v3"></path><path d="M16 2v3"></path><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path></svg>
+              <span>昨天 8月25日</span>
+              <span class="text-[10px] font-mono" id="count-yesterday">(1条)</span>
+            </div>
+          </div>
+
+          <div class="pl-3 space-y-2">
+            <div class="flex items-start gap-2 text-xs text-gray-600">
+              <span class="text-[11px] font-mono text-gray-400 flex-shrink-0 pt-0.5">17:30</span>
+              <span>跟领导提了调岗的想法，等答复</span>
+            </div>
+          </div>
+
+          <div class="border-t border-gray-100 my-2"></div>
+
+          <!-- Date pill: Today -->
+          <div class="flex items-center justify-between">
+            <div id="pill-today" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium tracking-tight">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="icon-today"><path d="M8 2v3"></path><path d="M16 2v3"></path><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path></svg>
+              <span>今天 8月27日</span>
+              <span class="text-[10px] font-mono" id="count-today">(7条)</span>
+            </div>
+            <div class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 border border-amber-500/30 flex items-center gap-1">
+              <span>✨</span><span>此刻进行时</span>
+            </div>
+          </div>
+
+          <div class="pl-3 space-y-2">
+            <div class="flex items-start gap-2 text-xs text-gray-600">
+              <span class="text-[11px] font-mono text-gray-400 flex-shrink-0 pt-0.5">09:12</span>
+              <span>先随便记记，今天感觉一般</span>
+            </div>
+            <div class="flex items-start gap-2 text-xs text-gray-600">
+              <span class="text-[11px] font-mono text-gray-400 flex-shrink-0 pt-0.5">09:40</span>
+              <span>10月3日去看演唱会 <span class="text-blue-500">🔗演唱会</span></span>
+            </div>
+            <div class="flex items-start gap-2 text-xs text-gray-500 pl-4 border-l-2 border-dashed border-gray-200">
+              <span class="text-[11px] font-mono text-gray-400 flex-shrink-0 pt-0.5">10:05</span>
+              <span>因为B更快能看到效果</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview on Dark BG -->
+      <div class="glass-panel p-5 rounded-2xl space-y-3">
+        <h3 class="text-xs font-bold text-white">深色背景预览 (Dark Mode)</h3>
+        <div class="bg-gray-950 rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div id="pill-dark" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium tracking-tight">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="icon-dark"><path d="M8 2v3"></path><path d="M16 2v3"></path><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path></svg>
+              <span>今天 8月27日</span>
+              <span class="text-[10px] font-mono" id="count-dark">(7条)</span>
+            </div>
+          </div>
+          <div class="pl-3 space-y-1.5 text-xs text-gray-400">
+            <div>09:12 先随便记记，今天感觉一般</div>
+            <div>09:40 10月3日去看演唱会</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Size comparison -->
+      <div class="glass-panel p-5 rounded-2xl space-y-3">
+        <h3 class="text-xs font-bold text-white">多尺寸对比</h3>
+        <div class="bg-white rounded-2xl p-4 flex items-center gap-4 flex-wrap">
+          <div id="pill-sm" class="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium tracking-tight">
+            <span>8月24日</span><span class="font-mono">(1)</span>
+          </div>
+          <div id="pill-md" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium tracking-tight">
+            <span>昨天 8月26日</span><span class="font-mono">(3)</span>
+          </div>
+          <div id="pill-lg" class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-tight">
+            <span>今天 8月27日</span><span class="font-mono">(7条)</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let blurEnabled = true;
+
+    const presets = {
+      'warm-dark':    { hue: 28, sat: 70, light: 15, opacity: 85, border: 25, text: 95, icon: 60 },
+      'warm-medium':  { hue: 30, sat: 60, light: 28, opacity: 90, border: 20, text: 98, icon: 65 },
+      'warm-light':   { hue: 32, sat: 50, light: 42, opacity: 90, border: 15, text: 100, icon: 70 },
+      'amber-glass':  { hue: 35, sat: 55, light: 20, opacity: 70, border: 30, text: 95, icon: 65 },
+      'original-gray':{ hue: 0,  sat: 0,  light: 12, opacity: 80, border: 10, text: 100, icon: 50 },
+      'railgun-gold': { hue: 38, sat: 80, light: 22, opacity: 85, border: 35, text: 97, icon: 70 },
+    };
+
+    function applyPreset(name) {
+      const p = presets[name];
+      document.getElementById('hue-slider').value = p.hue;
+      document.getElementById('sat-slider').value = p.sat;
+      document.getElementById('light-slider').value = p.light;
+      document.getElementById('opacity-slider').value = p.opacity;
+      document.getElementById('border-slider').value = p.border;
+      document.getElementById('text-slider').value = p.text;
+      document.getElementById('icon-slider').value = p.icon;
+      updateAll();
+    }
+
+    function toggleBlur() {
+      blurEnabled = !blurEnabled;
+      document.getElementById('blur-btn').textContent = blurEnabled ? '启用' : '关闭';
+      document.getElementById('blur-btn').className = blurEnabled
+        ? 'text-xs px-3 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold'
+        : 'text-xs px-3 py-1 rounded-lg bg-amber-950 text-amber-200/80 border border-amber-800';
+      updateAll();
+    }
+
+    function updateAll() {
+      const h = parseInt(document.getElementById('hue-slider').value);
+      const s = parseInt(document.getElementById('sat-slider').value);
+      const l = parseInt(document.getElementById('light-slider').value);
+      const o = parseInt(document.getElementById('opacity-slider').value);
+      const b = parseInt(document.getElementById('border-slider').value);
+      const t = parseInt(document.getElementById('text-slider').value);
+      const ic = parseInt(document.getElementById('icon-slider').value);
+
+      // Update labels
+      document.getElementById('hue-label').textContent = h;
+      document.getElementById('sat-label').textContent = s + '%';
+      document.getElementById('light-label').textContent = l + '%';
+      document.getElementById('opacity-label').textContent = o + '%';
+      document.getElementById('border-label').textContent = b + '%';
+      document.getElementById('text-label').textContent = t + '%';
+      document.getElementById('icon-label').textContent = ic + '%';
+
+      // Compute colors
+      const bgColor = `hsla(${h}, ${s}%, ${l}%, ${o / 100})`;
+      const borderColor = `hsla(${h}, ${s}%, ${Math.min(l + 20, 70)}%, ${b / 100})`;
+      const textColor = `hsl(${h}, ${Math.min(s, 20)}%, ${t}%)`;
+      const countColor = `hsla(${h}, ${s}%, ${Math.max(t - 30, 40)}%, 0.7)`;
+      const iconColor = `hsl(${h}, ${Math.min(s + 10, 90)}%, ${ic}%)`;
+
+      const blur = blurEnabled ? 'backdrop-blur-md' : '';
+      const blurStyle = blurEnabled ? 'backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);' : '';
+      const shadowStyle = 'box-shadow: 0 1px 3px rgba(0,0,0,0.08);';
+
+      // Apply to all preview pills
+      const pills = ['pill-prev', 'pill-yesterday', 'pill-today', 'pill-dark', 'pill-sm', 'pill-md', 'pill-lg'];
+      pills.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.backgroundColor = bgColor;
+        el.style.borderColor = borderColor;
+        el.style.borderWidth = '1px';
+        el.style.borderStyle = 'solid';
+        el.style.color = textColor;
+        if (blurEnabled) {
+          el.style.backdropFilter = 'blur(12px)';
+          el.style.webkitBackdropFilter = 'blur(12px)';
+        } else {
+          el.style.backdropFilter = 'none';
+          el.style.webkitBackdropFilter = 'none';
+        }
+        el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)';
+      });
+
+      // Icon colors
+      ['icon-prev', 'icon-yesterday', 'icon-today', 'icon-dark'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.color = iconColor;
+      });
+
+      // Count dimmed color
+      ['count-prev', 'count-yesterday', 'count-today', 'count-dark'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.color = countColor;
+      });
+
+      // Generate Tailwind-compatible CSS output
+      const cssOut = document.getElementById('css-output');
+      cssOut.textContent =
+`/* 日期标头胶囊 - 当前调参值 */
+/* HSL: h=${h} s=${s}% l=${l}% opacity=${o}% */
+
+className={
+  "flex items-center gap-1.5 px-3 py-1 rounded-full " +
+  "text-[11px] font-medium tracking-tight shadow-xs"
+}
+style={{
+  backgroundColor: "hsla(${h}, ${s}%, ${l}%, ${o/100})",
+  borderColor: "hsla(${h}, ${s}%, ${Math.min(l+20,70)}%, ${b/100})",
+  borderWidth: "1px",
+  color: "hsl(${h}, ${Math.min(s,20)}%, ${t}%)",${blurEnabled ? '\n  backdropFilter: "blur(12px)",' : ''}
+}}
+
+/* Icon color: hsl(${h}, ${Math.min(s+10,90)}%, ${ic}%) */
+/* Count color: hsla(${h}, ${s}%, ${Math.max(t-30,40)}%, 0.7) */`;
+    }
+
+    // Initialize
+    updateAll();
+  </script>
+</body>
+</html>
