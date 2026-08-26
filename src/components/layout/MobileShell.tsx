@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { RecordView } from '../../views/record/RecordView';
 import { ReviewView } from '../../views/ReviewView';
@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Layers,
   GitFork,
+  Trash2,
 } from 'lucide-react';
 
 export const MobileShell = () => {
@@ -19,12 +20,51 @@ export const MobileShell = () => {
   const setActiveTab = useFlowStore((s) => s.setActiveTab);
   const resetToDefaultData = useFlowStore((s) => s.resetToDefaultData);
 
-  // Desktop simulator options
+  // 检测是否是移动端原生环境 / 手机小屏模式
+  const [isMobileScreen, setIsMobileScreen] = useState(false);
   const [isPhoneFrame, setIsPhoneFrame] = useState(true);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      // 屏幕宽度小于 640px 或在独立 PWA / Capacitor 原生环境中自动 100% 全屏
+      const isMobile = window.innerWidth < 640 || window.matchMedia('(display-mode: standalone)').matches;
+      setIsMobileScreen(isMobile);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const handleClearAllData = () => {
+    if (window.confirm('确定要清空所有数据（包括 Mock 数据与历史记录），开启纯净空白模式吗？')) {
+      useFlowStore.setState({
+        records: [],
+        threads: [],
+        tags: [],
+        activeBranchParentId: null,
+        quickSelectedThreadId: null,
+        selectedDate: null,
+      });
+    }
+  };
+
+  // 如果是在手机屏幕/移动端真机打开，直接渲染 100% 全屏原生 App 容器
+  if (isMobileScreen) {
+    return (
+      <div className="w-full h-dvh bg-white flex flex-col overflow-hidden select-none">
+        <div className="flex-1 overflow-hidden relative flex flex-col">
+          {activeTab === 'record' && <RecordView />}
+          {activeTab === 'review' && <ReviewView />}
+          {activeTab === 'thread-detail' && <ThreadDetailView />}
+          {activeTab === 'widgets' && <WidgetSimulatorView />}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-0 sm:p-4 text-gray-800">
-      {/* Top Demo Bar / Navigation Header */}
+      {/* 桌面端开发/演示工具栏 (仅在 PC 浏览器端显示，方便演示页面跳转与数据调试) */}
       <header className="w-full max-w-4xl px-4 py-3 flex items-center justify-between text-white border-b border-slate-800 mb-0 sm:mb-4 bg-slate-950/60 backdrop-blur-md rounded-none sm:rounded-xl">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30 font-bold font-mono text-sm">
@@ -32,12 +72,12 @@ export const MobileShell = () => {
           </div>
           <div>
             <h1 className="text-sm font-semibold text-white flex items-center gap-1.5">
-              思维流 App (01flow)
+              思维流 (01flow)
               <span className="text-[10px] text-emerald-400 bg-emerald-950/80 border border-emerald-800/60 px-1.5 py-0.2 rounded font-mono">
-                UI v1.1
+                App 调试外壳
               </span>
             </h1>
-            <p className="text-[11px] text-slate-400">三大页面完整串联 · 扁平树形缩进 · 零阶段思维线</p>
+            <p className="text-[11px] text-slate-400">三大页面完整串联 · 扁平虚线树 · R2 直连同步</p>
           </div>
         </div>
 
@@ -72,8 +112,9 @@ export const MobileShell = () => {
           {/* Page 3: 思维线详情页 */}
           <button
             onClick={() => {
-              // Open default thread (concert) if none selected
-              useFlowStore.getState().openThreadDetail('thread_concert');
+              const threads = useFlowStore.getState().threads;
+              const firstThreadId = threads[0]?.id || 'thread_concert';
+              useFlowStore.getState().openThreadDetail(firstThreadId);
             }}
             className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-colors ${
               activeTab === 'thread-detail'
@@ -82,7 +123,7 @@ export const MobileShell = () => {
             }`}
           >
             <GitFork className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">3. 思维线详情页</span>
+            <span className="hidden sm:inline">3. 思维线详情</span>
           </button>
 
           {/* Page 4: 桌面小组件演示 */}
@@ -95,7 +136,7 @@ export const MobileShell = () => {
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">4. 桌面小组件</span>
+            <span className="hidden sm:inline">4. 小组件</span>
           </button>
         </div>
 
@@ -104,17 +145,25 @@ export const MobileShell = () => {
           <button
             onClick={() => setIsPhoneFrame(!isPhoneFrame)}
             className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-            title={isPhoneFrame ? '切换为自适应网页模式' : '切换为手机壳仿真模式'}
+            title={isPhoneFrame ? '切换为大屏自适应模式' : '切换为手机仿真壳模式'}
           >
             {isPhoneFrame ? <Maximize2 className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
           </button>
 
           <button
             onClick={resetToDefaultData}
-            className="p-2 text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition-colors"
+            className="p-2 text-slate-400 hover:text-blue-400 rounded-lg hover:bg-slate-800 transition-colors"
             title="重置为设计规范初始 Mock 数据"
           >
             <RotateCcw className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={handleClearAllData}
+            className="p-2 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-800 transition-colors"
+            title="清空所有数据（纯净空白模式）"
+          >
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </header>
