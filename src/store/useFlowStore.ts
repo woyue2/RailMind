@@ -250,12 +250,19 @@ const initialRecords: RecordItem[] = [
   },
 ];
 
+// Demo data is intentionally development-only. Production APKs start clean;
+// the desktop debug shell can still use the complete fixture set.
+const isMockEnabled = import.meta.env.DEV;
+const defaultRecords = isMockEnabled ? initialRecords : [];
+const defaultTags = isMockEnabled ? initialTags : [];
+const defaultThreads = isMockEnabled ? initialThreads : [];
+
 export const useFlowStore = create<FlowState>()(
   persist(
     (set, get) => ({
-      records: initialRecords,
-      tags: initialTags,
-      threads: initialThreads,
+      records: defaultRecords,
+      tags: defaultTags,
+      threads: defaultThreads,
 
       activeTab: 'record',
       selectedThreadId: null,
@@ -500,9 +507,9 @@ export const useFlowStore = create<FlowState>()(
 
       resetToDefaultData: () => {
         set({
-          records: initialRecords,
-          tags: initialTags,
-          threads: initialThreads,
+          records: defaultRecords,
+          tags: defaultTags,
+          threads: defaultThreads,
           activeBranchParentId: null,
           quickSelectedThreadId: null,
           selectedThreadId: null,
@@ -513,7 +520,9 @@ export const useFlowStore = create<FlowState>()(
       },
     }),
     {
-      name: 'flow-01-storage-v2',
+      // v3 prevents previously persisted development fixtures from leaking
+      // into a production APK after upgrading from the prototype build.
+      name: 'flow-01-storage-v3',
     }
   )
 );

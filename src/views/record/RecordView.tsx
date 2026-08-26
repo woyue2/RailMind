@@ -123,7 +123,7 @@ export const RecordView = () => {
   return (
     <div className="flex flex-col h-full bg-white relative">
       {/* 1. Header Bar: Date and count + Navigation buttons */}
-      <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100 bg-white/95 backdrop-blur-sm sticky top-0 z-10">
+      <div className="record-header flex items-center justify-between px-4 py-3.5 border-b border-gray-100 bg-white/95 backdrop-blur-sm sticky top-0 z-10">
         <div className="flex items-center gap-2">
           {/* If navigated here from Thread Detail, show Back arrow to that Thread */}
           {fromThreadDetailId ? (
@@ -168,7 +168,7 @@ export const RecordView = () => {
           {/* Cloud Sync Status / Open Settings */}
           <button
             onClick={() => setSettingsModalOpen(true)}
-            className={`p-1.5 rounded-lg border transition-colors flex items-center justify-center ${
+            className={`min-w-10 min-h-10 p-2 rounded-lg border transition-colors flex items-center justify-center ${
               r2Enabled
                 ? 'text-blue-600 bg-blue-50/80 border-blue-200 hover:bg-blue-100'
                 : 'text-gray-400 bg-gray-50 border-gray-200/60 hover:text-gray-700 hover:bg-gray-100'
@@ -181,7 +181,7 @@ export const RecordView = () => {
           {/* Entry to Review View */}
           <button
             onClick={() => setActiveTab('review')}
-            className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-2.5 py-1 rounded-lg hover:bg-gray-100 bg-gray-50 border border-gray-200/60 transition-colors"
+            className="min-h-10 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-3 rounded-lg hover:bg-gray-100 bg-gray-50 border border-gray-200/60 transition-colors"
             title="打开回顾页"
           >
             <BookOpen className="w-3.5 h-3.5 text-gray-600" />

@@ -51,7 +51,7 @@ export const MobileShell = () => {
   // 如果是在手机屏幕/移动端真机打开，直接渲染 100% 全屏原生 App 容器
   if (isMobileScreen) {
     return (
-      <div className="w-full h-dvh bg-white flex flex-col overflow-hidden select-none">
+      <div className="mobile-app-shell w-full h-dvh bg-white flex flex-col overflow-hidden select-none">
         <div className="flex-1 overflow-hidden relative flex flex-col">
           {activeTab === 'record' && <RecordView />}
           {activeTab === 'review' && <ReviewView />}

@@ -41,7 +41,7 @@ export const RecordInputBar: React.FC = () => {
   };
 
   return (
-    <div className="border-t border-gray-100 bg-white/95 backdrop-blur-md px-3 pt-2 pb-3">
+    <div className="record-input-bar border-t border-gray-100 bg-white/95 backdrop-blur-md px-3 pt-2 pb-3">
       {/* 1. Branching State Alert (if active) */}
       {parentRecord && (
         <div className="mb-2 px-2.5 py-1.5 bg-amber-50/90 border border-amber-200/80 rounded-lg flex items-center justify-between text-xs text-amber-900 animate-in fade-in duration-150">
