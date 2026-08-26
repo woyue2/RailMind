@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.park.flow01',
-  appName: '超电思',
+  appName: 'RailMind',
   webDir: 'dist',
   server: {
     androidScheme: 'https',

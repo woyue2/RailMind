@@ -1,6 +1,6 @@
 {
-  "name": "超电思 (Railmind)",
-  "short_name": "超电思",
+  "name": "RailMind",
+  "short_name": "RailMind",
   "description": "极简极速的本地优先单流分支时间轴高能思考记录工具",
   "start_url": "/",
   "display": "standalone",
