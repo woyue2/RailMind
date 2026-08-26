@@ -2,6 +2,22 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { RecordItem, TagItem, ThreadItem, EnrichedRecordItem } from '../types';
 import { generateId } from '../utils/dateUtils';
+import { createR2SyncService } from '../sync';
+import { loadR2Settings } from '../sync/credentials';
+
+function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) => Promise<void> | void) {
+  if (!loadR2Settings().enabled) return;
+  const sync = createR2SyncService();
+  if (!sync) return;
+  try {
+    const res = action(sync);
+    if (res instanceof Promise) {
+      res.catch(() => {});
+    }
+  } catch {
+    // ignore
+  }
+}
 
 interface FlowState {
   records: RecordItem[];
@@ -278,11 +294,15 @@ export const useFlowStore = create<FlowState>()(
           };
         });
 
+        triggerAutoSync((sync) => sync?.pushRecord(newRecord));
+
         return newRecord;
       },
 
       updateRecord: (id, updates) => {
         const nowIso = new Date().toISOString();
+        let updatedRecord: RecordItem | undefined;
+
         set((state) => {
           let updatedThreads = state.threads;
           if (updates.thread_id) {
@@ -290,17 +310,30 @@ export const useFlowStore = create<FlowState>()(
               th.id === updates.thread_id ? { ...th, last_used_at: nowIso } : th
             );
           }
+          const updatedRecords = state.records.map((r) => {
+            if (r.id === id) {
+              updatedRecord = { ...r, ...updates };
+              return updatedRecord;
+            }
+            return r;
+          });
           return {
-            records: state.records.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+            records: updatedRecords,
             threads: updatedThreads,
           };
         });
+
+        if (updatedRecord) {
+          triggerAutoSync((sync) => sync?.pushRecord(updatedRecord!));
+        }
       },
 
       deleteRecord: (id) => {
         set((state) => ({
           records: state.records.filter((r) => r.id !== id && r.parent_id !== id),
         }));
+
+        triggerAutoSync((sync) => sync?.deleteRecord(id));
       },
 
       createThread: (title) => {
@@ -315,6 +348,8 @@ export const useFlowStore = create<FlowState>()(
         set((state) => ({
           threads: [newThread, ...state.threads],
         }));
+
+        triggerAutoSync((sync) => sync?.pushThread(newThread));
 
         return newThread;
       },
@@ -359,6 +394,7 @@ export const useFlowStore = create<FlowState>()(
         set((state) => ({
           tags: [...state.tags, newTag],
         }));
+        triggerAutoSync((sync) => sync?.pushTag(newTag));
         return newTag;
       },
 
@@ -367,6 +403,7 @@ export const useFlowStore = create<FlowState>()(
           tags: state.tags.filter((t) => t.id !== id),
           records: state.records.map((r) => (r.tag_id === id ? { ...r, tag_id: null } : r)),
         }));
+        triggerAutoSync((sync) => sync?.deleteTag(id));
       },
 
       getTagRecords: (tagId) => {

@@ -4,10 +4,12 @@ import { RecordItemRow } from './RecordItemRow';
 import { RecordInputBar } from './RecordInputBar';
 import { ThreadPickerModal } from '../../components/modals/ThreadPickerModal';
 import { TagPickerModal } from '../../components/modals/TagPickerModal';
+import { SettingsModal } from '../../components/modals/SettingsModal';
 import { formatDateLabel } from '../../utils/dateUtils';
 import { EnrichedRecordItem } from '../../types';
-import { Calendar, RotateCcw, BookOpen, ArrowLeft } from 'lucide-react';
+import { Calendar, RotateCcw, BookOpen, ArrowLeft, Cloud, Settings } from 'lucide-react';
 import { isSameDay, parseISO } from 'date-fns';
+import { isR2Configured, loadR2Settings } from '../../sync/credentials';
 
 export const RecordView = () => {
   const records = useFlowStore((s) => s.records);
@@ -32,6 +34,9 @@ export const RecordView = () => {
 
   const [tagModalOpen, setTagModalOpen] = useState(false);
   const [targetRecordForTag, setTargetRecordForTag] = useState<{ id: string; currentTagId: string | null } | null>(null);
+
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const r2Enabled = isR2Configured() && loadR2Settings().enabled;
 
   // Filter records by selected date or today
   const filteredRecords = useMemo(() => {
@@ -158,15 +163,31 @@ export const RecordView = () => {
           )}
         </div>
 
-        {/* Entry to Review View */}
-        <button
-          onClick={() => setActiveTab('review')}
-          className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-2.5 py-1 rounded-lg hover:bg-gray-100 bg-gray-50 border border-gray-200/60 transition-colors"
-          title="打开回顾页"
-        >
-          <BookOpen className="w-3.5 h-3.5 text-gray-600" />
-          <span className="font-medium">回顾</span>
-        </button>
+        {/* Action Group: Sync / Settings / Review */}
+        <div className="flex items-center gap-1.5">
+          {/* Cloud Sync Status / Open Settings */}
+          <button
+            onClick={() => setSettingsModalOpen(true)}
+            className={`p-1.5 rounded-lg border transition-colors flex items-center justify-center ${
+              r2Enabled
+                ? 'text-blue-600 bg-blue-50/80 border-blue-200 hover:bg-blue-100'
+                : 'text-gray-400 bg-gray-50 border-gray-200/60 hover:text-gray-700 hover:bg-gray-100'
+            }`}
+            title={r2Enabled ? 'R2 云端同步已开启 (点击查看设置与手动同步)' : '配置 R2 云端存储与备份'}
+          >
+            {r2Enabled ? <Cloud className="w-3.5 h-3.5" /> : <Settings className="w-3.5 h-3.5" />}
+          </button>
+
+          {/* Entry to Review View */}
+          <button
+            onClick={() => setActiveTab('review')}
+            className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-2.5 py-1 rounded-lg hover:bg-gray-100 bg-gray-50 border border-gray-200/60 transition-colors"
+            title="打开回顾页"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-gray-600" />
+            <span className="font-medium">回顾</span>
+          </button>
+        </div>
       </div>
 
       {/* 2. Timeline & Branch Tree List */}
@@ -209,6 +230,11 @@ export const RecordView = () => {
         onClose={() => setTagModalOpen(false)}
         currentTagId={targetRecordForTag?.currentTagId ?? null}
         onSelectTag={handleSelectTag}
+      />
+
+      <SettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
       />
     </div>
   );
