@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>01flow (思维流) - 御坂美琴 (超电磁炮) 主题配色工坊</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
+    }
+    .glass-panel {
+      background: rgba(26, 20, 16, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+    }
+    .glow-active {
+      box-shadow: 0 0 35px -5px rgba(245, 158, 11, 0.45);
+    }
+  </style>
+</head>
+<body class="bg-[#0D0B08] text-amber-50 min-h-screen flex flex-col items-center py-6 px-4 selection:bg-amber-500 selection:text-slate-950">
+
+  <!-- 顶部 Header: 动漫主题与配色解析 -->
+  <header class="w-full max-w-7xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-amber-950/80 mb-8">
+    <div class="flex items-center gap-3.5">
+      <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-cyan-400 p-[2px] flex items-center justify-center shadow-xl shadow-amber-500/20">
+        <div class="w-full h-full bg-[#1A140F] rounded-[14px] flex items-center justify-center relative overflow-hidden">
+          <span class="font-mono font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-cyan-300 text-lg tracking-tighter">⚡01</span>
+        </div>
+      </div>
+      <div>
+        <div class="flex items-center gap-2.5">
+          <h1 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+            <span>思维流 · 御坂美琴 (超电磁炮) 特别配色工坊</span>
+          </h1>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold flex items-center gap-1">
+            <span>⚡ Level 5 Railgun</span>
+          </span>
+        </div>
+        <p class="text-xs text-amber-200/60 mt-0.5 flex items-center gap-2 flex-wrap">
+          <span>基于 <strong class="text-amber-300">方案 E (悬浮胶囊卡片流)</strong></span>
+          <span class="text-amber-700">·</span>
+          <span>常盘台中学校服米咖 + 橙色硬币 + 蓝白高压电弧 + ゲコ太(呱太)绿 专属色阶</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- 顶部动作控制 -->
+    <div class="flex flex-wrap items-center gap-3">
+      <!-- 图标切角风格 -->
+      <div class="bg-amber-950/60 border border-amber-800/40 p-1 rounded-xl flex items-center gap-1 text-xs">
+        <span class="text-amber-300/70 px-2 font-medium">切角:</span>
+        <button onclick="setShape('ios')" id="shape-ios" class="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold transition-all">Apple 连续曲率</button>
+        <button onclick="setShape('round')" id="shape-round" class="px-2.5 py-1 rounded-lg text-amber-200/70 hover:text-white transition-all">圆角矩形</button>
+        <button onclick="setShape('circle')" id="shape-circle" class="px-2.5 py-1 rounded-lg text-amber-200/70 hover:text-white transition-all">圆形 (Android)</button>
+      </div>
+
+      <!-- 导出 SVG -->
+      <button onclick="downloadActiveSVG()" class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-bold shadow-lg shadow-amber-500/30 transition-all active:scale-95">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+        <span>导出当前选中图标 (SVG)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主工作台：左侧 6 套美琴专属配色方案，右侧实机桌面与全尺寸对比 -->
+  <div class="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+    <!-- 左侧方案选择器 (占 7 列) -->
+    <div class="lg:col-span-7 space-y-4">
+      <div class="flex items-center justify-between pb-1">
+        <h2 class="text-sm font-semibold text-amber-100 flex items-center gap-2">
+          <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
+          <span>御坂美琴专属 6 款配色方案</span>
+        </h2>
+        <span class="text-xs text-amber-300/70">已选中: <span id="active-concept-name" class="text-amber-400 font-bold">方案 E-1 · 超电磁炮硬币发射 (Railgun Coin Strike)</span></span>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3.5" id="concepts-grid">
+
+        <!-- 方案 E-1: 超电磁炮硬币发射 (Railgun Coin Strike) - 经典金币橙 + 蓝白电弧 -->
+        <div onclick="selectConcept('E1')" id="concept-card-E1" class="concept-card cursor-pointer p-4 rounded-2xl bg-[#1A140F]/90 border-2 border-amber-500 glow-active transition-all flex items-center gap-4.5">
+          <div class="w-18 h-18 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-E1" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-E1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#140F0A" />
+                  <stop offset="60%" stop-color="#1F1710" />
+                  <stop offset="100%" stop-color="#080604" />
+                </linearGradient>
+                <!-- 卡片 1: 橘金游戏币 (超电磁炮弹药) -->
+                <linearGradient id="coin-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FDE047" />
+                  <stop offset="40%" stop-color="#F59E0B" />
+                  <stop offset="100%" stop-color="#D97706" />
+                </linearGradient>
+                <!-- 卡片 2: 高压离子电弧蓝 (落雷电磁场) -->
+                <linearGradient id="arc-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#E0F2FE" />
+                  <stop offset="30%" stop-color="#38BDF8" />
+                  <stop offset="100%" stop-color="#0284C7" />
+                </linearGradient>
+                <!-- 卡片 3: 常盘台米褐校服毛衣色 -->
+                <linearGradient id="tokiwadai-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FDE68A" />
+                  <stop offset="50%" stop-color="#D97706" />
+                  <stop offset="100%" stop-color="#78350F" />
+                </linearGradient>
+                <filter id="shadow-E1" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#F59E0B" flood-opacity="0.25" />
+                </filter>
+                <filter id="glow-arc" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="8" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-E1)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(251,191,36,0.18)" stroke-width="2" />
+
+              <!-- 虚线时间轴导轨: 蓝白电磁轨迹 -->
+              <path d="M190 110 V 400" stroke="#38BDF8" stroke-width="4" stroke-dasharray="6 8" filter="url(#glow-arc)" opacity="0.6" />
+              <path d="M190 256 H 240" stroke="#38BDF8" stroke-width="4" stroke-dasharray="4 6" opacity="0.8" />
+
+              <!-- 卡片 1: 橘金游戏币脉冲 (主想法) -->
+              <rect x="160" y="140" width="220" height="64" rx="20" fill="url(#coin-grad)" filter="url(#shadow-E1)" />
+              <!-- 金币核心圆点 -->
+              <circle cx="190" cy="172" r="12" fill="#FEF08A" />
+              <circle cx="190" cy="172" r="6" fill="#B45309" />
+              <rect x="220" y="166" width="120" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+
+              <!-- 卡片 2: 电弧等离子蓝 (分支爆发) -->
+              <rect x="220" y="226" width="180" height="60" rx="20" fill="url(#arc-grad)" filter="url(#shadow-E1)" />
+              <circle cx="250" cy="256" r="8" fill="#FFFFFF" filter="url(#glow-arc)" />
+              <rect x="275" y="250" width="90" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+
+              <!-- 卡片 3: 常盘台米茶色 (沉淀回顾) -->
+              <rect x="180" y="310" width="210" height="62" rx="20" fill="url(#tokiwadai-grad)" filter="url(#shadow-E1)" />
+              <circle cx="210" cy="341" r="9" fill="#FEF3C7" />
+              <rect x="235" y="335" width="115" height="12" rx="6" fill="rgba(255,255,255,0.85)" />
+
+              <!-- 微妙电火花装饰 -->
+              <circle cx="370" cy="130" r="4" fill="#67E8F9" filter="url(#glow-arc)" />
+              <circle cx="140" cy="280" r="3" fill="#FDE047" filter="url(#glow-arc)" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <span>方案 E-1 · 超电磁炮硬币发射</span>
+                <span class="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-md font-mono">经典 · 硬币与落雷</span>
+              </h3>
+            </div>
+            <p class="text-xs text-amber-200/70 mt-1 leading-relaxed">
+              <strong class="text-amber-300">色彩组合：</strong> 街机硬币橘金 ⚡ + 离子电弧电光蓝 ⚡ + 常盘台中学校服暖茶米色。还原美琴弹指发射超电磁炮的瞬时高能感。
+            </p>
+          </div>
+        </div>
+
+        <!-- 方案 E-2: 常盘台大小姐制服 (Tokiwadai Ace) - 米褐毛衣 + 经典校服蓝白裙 -->
+        <div onclick="selectConcept('E2')" id="concept-card-E2" class="concept-card cursor-pointer p-4 rounded-2xl bg-[#1A140F]/40 border border-amber-950/80 transition-all hover:bg-[#1A140F]/80 flex items-center gap-4.5">
+          <div class="w-18 h-18 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-E2" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-E2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#1C1814" />
+                  <stop offset="100%" stop-color="#0D0A08" />
+                </linearGradient>
+                <!-- 卡片 1: 常盘台招牌米黄针织背心 -->
+                <linearGradient id="sweater-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FDE68A" />
+                  <stop offset="50%" stop-color="#F59E0B" />
+                  <stop offset="100%" stop-color="#B45309" />
+                </linearGradient>
+                <!-- 卡片 2: 美琴标志茶褐短发色 -->
+                <linearGradient id="hair-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#A16207" />
+                  <stop offset="50%" stop-color="#78350F" />
+                  <stop offset="100%" stop-color="#451A03" />
+                </linearGradient>
+                <!-- 卡片 3: 百褶裙与衬衫的极简纯白与深蓝 -->
+                <linearGradient id="skirt-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#E0E7FF" />
+                  <stop offset="50%" stop-color="#6366F1" />
+                  <stop offset="100%" stop-color="#312E81" />
+                </linearGradient>
+                <filter id="shadow-E2" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000000" flood-opacity="0.4" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-E2)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(245,158,11,0.15)" stroke-width="2" />
+
+              <path d="M190 110 V 400" stroke="rgba(245,158,11,0.3)" stroke-width="4" stroke-dasharray="6 8" />
+              <path d="M190 256 H 240" stroke="rgba(245,158,11,0.4)" stroke-width="4" stroke-dasharray="4 6" />
+
+              <!-- 卡片 1: 米黄毛衣背心 -->
+              <rect x="160" y="140" width="220" height="64" rx="20" fill="url(#sweater-grad)" filter="url(#shadow-E2)" />
+              <circle cx="190" cy="172" r="10" fill="#FFFBEB" />
+              <rect x="220" y="166" width="120" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+
+              <!-- 卡片 2: 茶褐发色 -->
+              <rect x="220" y="226" width="180" height="60" rx="20" fill="url(#hair-grad)" filter="url(#shadow-E2)" />
+              <circle cx="250" cy="256" r="8" fill="#FDE68A" />
+              <rect x="275" y="250" width="90" height="12" rx="6" fill="rgba(255,255,255,0.85)" />
+
+              <!-- 卡片 3: 百褶蓝裙 -->
+              <rect x="180" y="310" width="210" height="62" rx="20" fill="url(#skirt-grad)" filter="url(#shadow-E2)" />
+              <circle cx="210" cy="341" r="9" fill="#EEF2FF" />
+              <rect x="235" y="335" width="115" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <span>方案 E-2 · 常盘台大小姐制服</span>
+                <span class="text-[10px] px-2 py-0.5 bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 rounded-md font-mono">校服风 · 米褐深蓝</span>
+              </h3>
+            </div>
+            <p class="text-xs text-amber-200/70 mt-1 leading-relaxed">
+              <strong class="text-amber-300">色彩组合：</strong> 常盘台夏季浅米毛衣黄 + 栗茶色短发棕 + 学院深蓝裙。优雅学院气质与日常记录的温和感。
+            </p>
+          </div>
+        </div>
+
+        <!-- 方案 E-3: 呱太最爱 (Gekota Collector) - 经典青柠绿 + 纯真粉 + 橙黄 -->
+        <div onclick="selectConcept('E3')" id="concept-card-E3" class="concept-card cursor-pointer p-4 rounded-2xl bg-[#1A140F]/40 border border-amber-950/80 transition-all hover:bg-[#1A140F]/80 flex items-center gap-4.5">
+          <div class="w-18 h-18 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-E3" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-E3" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#0E1A14" />
+                  <stop offset="100%" stop-color="#060C08" />
+                </linearGradient>
+                <!-- 卡片 1: 呱太青蛙标志性翠绿 -->
+                <linearGradient id="gekota-green" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#4ADE80" />
+                  <stop offset="50%" stop-color="#22C55E" />
+                  <stop offset="100%" stop-color="#15803D" />
+                </linearGradient>
+                <!-- 卡片 2: 呱太腮红粉嫩软萌色 -->
+                <linearGradient id="gekota-pink" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#F472B6" />
+                  <stop offset="50%" stop-color="#EC4899" />
+                  <stop offset="100%" stop-color="#BE185D" />
+                </linearGradient>
+                <!-- 卡片 3: 美琴的电磁橙金 -->
+                <linearGradient id="gekota-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FDE047" />
+                  <stop offset="50%" stop-color="#F59E0B" />
+                  <stop offset="100%" stop-color="#B45309" />
+                </linearGradient>
+                <filter id="shadow-E3" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#22C55E" flood-opacity="0.2" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-E3)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(74,222,128,0.2)" stroke-width="2" />
+
+              <path d="M190 110 V 400" stroke="rgba(74,222,128,0.3)" stroke-width="4" stroke-dasharray="6 8" />
+              <path d="M190 256 H 240" stroke="rgba(74,222,128,0.4)" stroke-width="4" stroke-dasharray="4 6" />
+
+              <!-- 卡片 1: 呱太青草绿 -->
+              <rect x="160" y="140" width="220" height="64" rx="20" fill="url(#gekota-green)" filter="url(#shadow-E3)" />
+              <circle cx="190" cy="172" r="10" fill="#DCFCE7" />
+              <rect x="220" y="166" width="120" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+
+              <!-- 卡片 2: 软萌腮红粉 -->
+              <rect x="220" y="226" width="180" height="60" rx="20" fill="url(#gekota-pink)" filter="url(#shadow-E3)" />
+              <circle cx="250" cy="256" r="8" fill="#FCE7F3" />
+              <rect x="275" y="250" width="90" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+
+              <!-- 卡片 3: 电磁橙金 -->
+              <rect x="180" y="310" width="210" height="62" rx="20" fill="url(#gekota-gold)" filter="url(#shadow-E3)" />
+              <circle cx="210" cy="341" r="9" fill="#FEF08A" />
+              <rect x="235" y="335" width="115" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <span>方案 E-3 · 呱太狂热收集家</span>
+                <span class="text-[10px] px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-md font-mono">呱太 · 萌系青粉金</span>
+              </h3>
+            </div>
+            <p class="text-xs text-amber-200/70 mt-1 leading-relaxed">
+              <strong class="text-amber-300">色彩组合：</strong> 呱太(ゲコ太)标志青草绿 + 萌系腮红粉 + 电磁暖橙。致敬美琴无法自拔的少女心与反差萌。
+            </p>
+          </div>
+        </div>
+
+        <!-- 方案 E-4: 超高压电弧黑夜 (High Voltage Night) - 纯黑底 + 霓虹金 + 高能青蓝 + 紫电 -->
+        <div onclick="selectConcept('E4')" id="concept-card-E4" class="concept-card cursor-pointer p-4 rounded-2xl bg-[#1A140F]/40 border border-amber-950/80 transition-all hover:bg-[#1A140F]/80 flex items-center gap-4.5">
+          <div class="w-18 h-18 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-E4" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-E4" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#050811" />
+                  <stop offset="100%" stop-color="#020307" />
+                </linearGradient>
+                <!-- 卡片 1: 霓虹金橙 -->
+                <linearGradient id="neon-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FBBF24" />
+                  <stop offset="100%" stop-color="#EA580C" />
+                </linearGradient>
+                <!-- 卡片 2: 极光青蓝 -->
+                <linearGradient id="neon-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#38BDF8" />
+                  <stop offset="100%" stop-color="#0284C7" />
+                </linearGradient>
+                <!-- 卡片 3: 50亿伏特高压紫电 -->
+                <linearGradient id="neon-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#C084FC" />
+                  <stop offset="100%" stop-color="#7C3AED" />
+                </linearGradient>
+                <filter id="shadow-E4" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000000" flood-opacity="0.6" />
+                </filter>
+                <filter id="super-spark" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="6" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-E4)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(56,189,248,0.2)" stroke-width="2" />
+
+              <path d="M190 110 V 400" stroke="#38BDF8" stroke-width="4" stroke-dasharray="6 8" opacity="0.7" filter="url(#super-spark)" />
+              <path d="M190 256 H 240" stroke="#FBBF24" stroke-width="4" stroke-dasharray="4 6" opacity="0.8" />
+
+              <!-- 卡片 1: 霓虹金橙 -->
+              <rect x="160" y="140" width="220" height="64" rx="20" fill="url(#neon-gold)" filter="url(#shadow-E4)" />
+              <circle cx="190" cy="172" r="10" fill="#FFFFFF" filter="url(#super-spark)" />
+              <rect x="220" y="166" width="120" height="12" rx="6" fill="rgba(255,255,255,0.95)" />
+
+              <!-- 卡片 2: 极光青蓝 -->
+              <rect x="220" y="226" width="180" height="60" rx="20" fill="url(#neon-cyan)" filter="url(#shadow-E4)" />
+              <circle cx="250" cy="256" r="8" fill="#FFFFFF" filter="url(#super-spark)" />
+              <rect x="275" y="250" width="90" height="12" rx="6" fill="rgba(255,255,255,0.95)" />
+
+              <!-- 卡片 3: 高压紫电 -->
+              <rect x="180" y="310" width="210" height="62" rx="20" fill="url(#neon-purple)" filter="url(#shadow-E4)" />
+              <circle cx="210" cy="341" r="9" fill="#FFFFFF" filter="url(#super-spark)" />
+              <rect x="235" y="335" width="115" height="12" rx="6" fill="rgba(255,255,255,0.95)" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <span>方案 E-4 · 十亿伏特·雷击之枪</span>
+                <span class="text-[10px] px-2 py-0.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-md font-mono">雷击 · 金橙青蓝紫电</span>
+              </h3>
+            </div>
+            <p class="text-xs text-amber-200/70 mt-1 leading-relaxed">
+              <strong class="text-amber-300">色彩组合：</strong> 纯黑夜幕底色 + 爆发雷光金橙 + 穿透青蓝 + 紫电风暴。体现最强 Level 5 电击使的磅礴战斗力。
+            </p>
+          </div>
+        </div>
+
+        <!-- 方案 E-5: 学园都市夕阳 (Academy City Sunset) - 暖橙红 + 日落紫 + 暖琥珀 -->
+        <div onclick="selectConcept('E5')" id="concept-card-E5" class="concept-card cursor-pointer p-4 rounded-2xl bg-[#1A140F]/40 border border-amber-950/80 transition-all hover:bg-[#1A140F]/80 flex items-center gap-4.5">
+          <div class="w-18 h-18 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-E5" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-E5" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#24141E" />
+                  <stop offset="60%" stop-color="#180C14" />
+                  <stop offset="100%" stop-color="#0C0509" />
+                </linearGradient>
+                <!-- 卡片 1: 学园都市铁桥夕阳橙红 -->
+                <linearGradient id="sunset-orange" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FB923C" />
+                  <stop offset="50%" stop-color="#EA580C" />
+                  <stop offset="100%" stop-color="#C2410C" />
+                </linearGradient>
+                <!-- 卡片 2: 暮色紫霞 -->
+                <linearGradient id="sunset-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#E879F9" />
+                  <stop offset="50%" stop-color="#A21CAF" />
+                  <stop offset="100%" stop-color="#701A75" />
+                </linearGradient>
+                <!-- 卡片 3: 美琴的茶金色暖光 -->
+                <linearGradient id="sunset-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FDE047" />
+                  <stop offset="50%" stop-color="#F59E0B" />
+                  <stop offset="100%" stop-color="#B45309" />
+                </linearGradient>
+                <filter id="shadow-E5" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#EA580C" flood-opacity="0.25" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-E5)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(251,146,60,0.2)" stroke-width="2" />
+
+              <path d="M190 110 V 400" stroke="rgba(251,146,60,0.3)" stroke-width="4" stroke-dasharray="6 8" />
+              <path d="M190 256 H 240" stroke="rgba(251,146,60,0.4)" stroke-width="4" stroke-dasharray="4 6" />
+
+              <!-- 卡片 1: 夕阳橙红 -->
+              <rect x="160" y="140" width="220" height="64" rx="20" fill="url(#sunset-orange)" filter="url(#shadow-E5)" />
+              <circle cx="190" cy="172" r="10" fill="#FFEDD5" />
+              <rect x="220" y="166" width="120" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+
+              <!-- 卡片 2: 暮色紫霞 -->
+              <rect x="220" y="226" width="180" height="60" rx="20" fill="url(#sunset-purple)" filter="url(#shadow-E5)" />
+              <circle cx="250" cy="256" r="8" fill="#FAE8FF" />
+              <rect x="275" y="250" width="90" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+
+              <!-- 卡片 3: 茶金暖光 -->
+              <rect x="180" y="310" width="210" height="62" rx="20" fill="url(#sunset-amber)" filter="url(#shadow-E5)" />
+              <circle cx="210" cy="341" r="9" fill="#FEF08A" />
+              <rect x="235" y="335" width="115" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <span>方案 E-5 · 学园都市铁桥夕阳</span>
+                <span class="text-[10px] px-2 py-0.5 bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded-md font-mono">情怀 · 铁桥夕阳</span>
+              </h3>
+            </div>
+            <p class="text-xs text-amber-200/70 mt-1 leading-relaxed">
+              <strong class="text-amber-300">色彩组合：</strong> 美琴与当麻经常相遇的第七学区铁桥夕阳暖橙红 + 暮色渐变紫 + 茶金微光。唯美浪漫的青春回忆。
+            </p>
+          </div>
+        </div>
+
+        <!-- 方案 E-6: 纯白制服禅意 (Sisterhood Pure White) - 纯白底 + 浅茶金 + 蓝电弧 + 浅灰 -->
+        <div onclick="selectConcept('E6')" id="concept-card-E6" class="concept-card cursor-pointer p-4 rounded-2xl bg-[#1A140F]/40 border border-amber-950/80 transition-all hover:bg-[#1A140F]/80 flex items-center gap-4.5">
+          <div class="w-18 h-18 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-E6" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-E6" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FFFFFF" />
+                  <stop offset="70%" stop-color="#FAF5EE" />
+                  <stop offset="100%" stop-color="#F5EBE1" />
+                </linearGradient>
+                <!-- 卡片 1: 纯白底上的高级琥珀金 -->
+                <linearGradient id="clean-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#F59E0B" />
+                  <stop offset="100%" stop-color="#D97706" />
+                </linearGradient>
+                <!-- 卡片 2: 晴空电弧蓝 -->
+                <linearGradient id="clean-sky" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#0EA5E9" />
+                  <stop offset="100%" stop-color="#0284C7" />
+                </linearGradient>
+                <!-- 卡片 3: 常盘台深咖黑 -->
+                <linearGradient id="clean-dark" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#451A03" />
+                  <stop offset="100%" stop-color="#1C1917" />
+                </linearGradient>
+                <filter id="shadow-E6" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#B45309" flood-opacity="0.15" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-E6)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(0,0,0,0.06)" stroke-width="2" />
+
+              <path d="M190 110 V 400" stroke="#E2E8F0" stroke-width="4" stroke-dasharray="6 8" />
+              <path d="M190 256 H 240" stroke="#CBD5E1" stroke-width="4" stroke-dasharray="4 6" />
+
+              <!-- 卡片 1: 琥珀金 -->
+              <rect x="160" y="140" width="220" height="64" rx="20" fill="url(#clean-amber)" filter="url(#shadow-E6)" />
+              <circle cx="190" cy="172" r="10" fill="#FFFFFF" />
+              <rect x="220" y="166" width="120" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+
+              <!-- 卡片 2: 晴空蓝 -->
+              <rect x="220" y="226" width="180" height="60" rx="20" fill="url(#clean-sky)" filter="url(#shadow-E6)" />
+              <circle cx="250" cy="256" r="8" fill="#FFFFFF" />
+              <rect x="275" y="250" width="90" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+
+              <!-- 卡片 3: 深咖黑 -->
+              <rect x="180" y="310" width="210" height="62" rx="20" fill="url(#clean-dark)" filter="url(#shadow-E6)" />
+              <circle cx="210" cy="341" r="9" fill="#FDE68A" />
+              <rect x="235" y="335" width="115" height="12" rx="6" fill="rgba(255,255,255,0.9)" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <span>方案 E-6 · 纯白浅色日系禅意</span>
+                <span class="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-900 font-bold rounded-md font-mono">浅色 · 白底素雅</span>
+              </h3>
+            </div>
+            <p class="text-xs text-amber-200/70 mt-1 leading-relaxed">
+              <strong class="text-amber-300">色彩组合：</strong> 温暖纯白底色 + 琥珀金 + 晴空电弧蓝 + 深褐咖啡。适合偏好日系极简与浅色桌面的用户。
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 右侧实机场景模拟器 (占 5 列) -->
+    <div class="lg:col-span-5 space-y-6">
+
+      <!-- 1. 真实手机主屏实机仿真 -->
+      <div class="glass-panel p-5 rounded-3xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i data-lucide="smartphone" class="w-4 h-4 text-amber-400"></i>
+            <span class="text-xs font-semibold text-white">手机主屏幕 (Home Screen) 视觉实测</span>
+          </div>
+          <!-- 壁纸切换 -->
+          <div class="flex items-center gap-1.5 bg-[#140F0A] p-1 rounded-lg border border-amber-950">
+            <button onclick="setWallpaper('dark')" class="w-4 h-4 rounded-full bg-slate-950 border border-slate-700 shadow-sm" title="深邃暗黑极光"></button>
+            <button onclick="setWallpaper('railgun')" class="w-4 h-4 rounded-full bg-gradient-to-tr from-amber-500 via-orange-600 to-cyan-500 shadow-sm" title="超电磁炮落雷壁纸"></button>
+            <button onclick="setWallpaper('sunset')" class="w-4 h-4 rounded-full bg-gradient-to-tr from-amber-500 to-purple-800 shadow-sm" title="学园都市夕阳"></button>
+            <button onclick="setWallpaper('light')" class="w-4 h-4 rounded-full bg-amber-50 border border-amber-200 shadow-sm" title="浅色纯净壁纸"></button>
+          </div>
+        </div>
+
+        <!-- 手机屏幕模拟容器 -->
+        <div id="phone-screen" class="w-full h-72 rounded-2xl relative overflow-hidden flex flex-col justify-between p-4 bg-cover bg-center transition-all duration-300 shadow-2xl border border-amber-500/20" style="background-image: linear-gradient(135deg, #140f0a 0%, #1f1710 50%, #080604 100%);">
+          <!-- 顶部状态栏 -->
+          <div class="flex items-center justify-between text-[10px] text-white/80 font-mono select-none">
+            <span id="clock-text">09:41</span>
+            <div class="flex items-center gap-1 text-[9px]">
+              <span>5G</span>
+              <div class="w-4 h-2 border border-white/80 rounded-xs p-0.5 flex items-center">
+                <div class="w-full h-full bg-white"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 桌面 App 图标网格 (4 列) -->
+          <div class="grid grid-cols-4 gap-3 pt-2">
+            <!-- 焦点：01flow 思维流图标 (美琴配色) -->
+            <div class="flex flex-col items-center gap-1 group cursor-pointer">
+              <div class="w-13 h-13 relative shadow-xl shadow-black/60 transition-transform group-hover:scale-105" id="sim-icon-container">
+                <!-- 动态注入选中 SVG -->
+              </div>
+              <span id="app-label-text" class="text-[10.5px] text-amber-100/95 font-medium tracking-tight drop-shadow-md">思维流</span>
+            </div>
+
+            <!-- 陪衬 App 1: 日历 -->
+            <div class="flex flex-col items-center gap-1 opacity-70">
+              <div class="w-13 h-13 rounded-[12px] bg-white flex flex-col items-center justify-center shadow-md text-amber-600">
+                <span class="text-[8px] font-bold uppercase">AUG</span>
+                <span class="text-sm font-bold text-gray-900 -mt-1 font-mono">26</span>
+              </div>
+              <span class="text-[10px] text-white/80 drop-shadow-md">日历</span>
+            </div>
+
+            <!-- 陪衬 App 2: 相机 -->
+            <div class="flex flex-col items-center gap-1 opacity-70">
+              <div class="w-13 h-13 rounded-[12px] bg-gradient-to-b from-gray-200 to-gray-400 flex items-center justify-center shadow-md">
+                <i data-lucide="camera" class="w-6 h-6 text-gray-800"></i>
+              </div>
+              <span class="text-[10px] text-white/80 drop-shadow-md">相机</span>
+            </div>
+
+            <!-- 陪衬 App 3: 备忘录 -->
+            <div class="flex flex-col items-center gap-1 opacity-70">
+              <div class="w-13 h-13 rounded-[12px] bg-amber-100 flex items-center justify-center shadow-md">
+                <i data-lucide="zap" class="w-6 h-6 text-amber-600"></i>
+              </div>
+              <span class="text-[10px] text-white/80 drop-shadow-md">电磁记事</span>
+            </div>
+          </div>
+
+          <!-- 底部 Dock 栏 -->
+          <div class="bg-amber-950/40 backdrop-blur-xl border border-amber-500/20 rounded-2xl p-2 flex items-center justify-around shadow-lg">
+            <div class="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-sm"><i data-lucide="phone" class="w-5 h-5"></i></div>
+            <div class="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 shadow-sm"><i data-lucide="message-circle" class="w-5 h-5"></i></div>
+            <div class="w-10 h-10 rounded-xl bg-cyan-600 flex items-center justify-center text-white shadow-sm"><i data-lucide="compass" class="w-5 h-5"></i></div>
+            <div class="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center text-white shadow-sm"><i data-lucide="music" class="w-5 h-5"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 多尺寸清晰度检验 (128px ~ 16px) -->
+      <div class="glass-panel p-5 rounded-3xl space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i data-lucide="layers" class="w-4 h-4 text-amber-400"></i>
+            <span class="text-xs font-semibold text-white">多尺寸辨识度校验 (128px ~ 16px)</span>
+          </div>
+          <span class="text-[11px] text-amber-300/70">高压色彩清晰度强</span>
+        </div>
+
+        <div class="flex items-end justify-between gap-3 pt-2 bg-[#0E0B07] p-4 rounded-2xl border border-amber-950/90">
+          <div class="flex flex-col items-center gap-1.5">
+            <div class="w-16 h-16 shadow-lg shadow-black/50" id="size-preview-128"></div>
+            <span class="text-[10px] text-amber-500/70 font-mono">128px</span>
+          </div>
+          <div class="flex flex-col items-center gap-1.5">
+            <div class="w-11 h-11 shadow-md" id="size-preview-64"></div>
+            <span class="text-[10px] text-amber-500/70 font-mono">64px (桌面)</span>
+          </div>
+          <div class="flex flex-col items-center gap-1.5">
+            <div class="w-7 h-7" id="size-preview-32"></div>
+            <span class="text-[10px] text-amber-500/70 font-mono">32px (状态栏)</span>
+          </div>
+          <div class="flex flex-col items-center gap-1.5">
+            <div class="w-4.5 h-4.5" id="size-preview-16"></div>
+            <span class="text-[10px] text-amber-500/70 font-mono">16px (Favicon)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 配色说明与设计解构 -->
+      <div class="glass-panel p-5 rounded-3xl space-y-2.5 border-l-4 border-l-amber-500">
+        <h4 class="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+          <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i>
+          <span>御坂美琴 (Railgun) 视觉元素解构</span>
+        </h4>
+        <ul class="text-[11.5px] text-amber-100/80 space-y-1 leading-relaxed">
+          <li>• <strong class="text-amber-300">主胶囊 (Top)</strong>: 街机游戏币橘金，象征想法瞬间如硬币般超音速射出。</li>
+          <li>• <strong class="text-cyan-300">分支胶囊 (Mid)</strong>: 高能离子电弧天蓝，象征思维的分支如雷电般敏锐延展。</li>
+          <li>• <strong class="text-amber-400">底胶囊 (Bottom)</strong>: 常盘台针织毛衣米茶色，象征沉淀回顾的温暖与日常。</li>
+        </ul>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    let activeConceptId = 'E1';
+    let activeShape = 'ios';
+
+    const conceptNames = {
+      'E1': '方案 E-1 · 超电磁炮硬币发射 (Railgun Coin Strike)',
+      'E2': '方案 E-2 · 常盘台大小姐制服 (Tokiwadai Ace)',
+      'E3': '方案 E-3 · 呱太狂热收集家 (Gekota Collector)',
+      'E4': '方案 E-4 · 十亿伏特·雷击之枪 (High Voltage Night)',
+      'E5': '方案 E-5 · 学园都市铁桥夕阳 (Academy City Sunset)',
+      'E6': '方案 E-6 · 纯白浅色日系禅意 (Sisterhood Pure White)',
+    };
+
+    function updatePreviews() {
+      const activeSvg = document.getElementById(`svg-concept-${activeConceptId}`);
+      if (!activeSvg) return;
+
+      const svgHtml = activeSvg.outerHTML;
+
+      // 更新手机桌面中的图标
+      const simContainer = document.getElementById('sim-icon-container');
+      if (simContainer) simContainer.innerHTML = svgHtml;
+
+      // 更新多尺寸预览
+      ['128', '64', '32', '16'].forEach((size) => {
+        const el = document.getElementById(`size-preview-${size}`);
+        if (el) el.innerHTML = svgHtml;
+      });
+
+      applyShape();
+    }
+
+    function selectConcept(id) {
+      activeConceptId = id;
+      document.getElementById('active-concept-name').innerText = conceptNames[id];
+
+      const allIds = ['E1', 'E2', 'E3', 'E4', 'E5', 'E6'];
+      allIds.forEach((cid) => {
+        const card = document.getElementById(`concept-card-${cid}`);
+        if (!card) return;
+        if (cid === id) {
+          card.className = 'concept-card cursor-pointer p-4 rounded-2xl bg-[#1A140F]/90 border-2 border-amber-500 glow-active transition-all flex items-center gap-4.5';
+        } else {
+          card.className = 'concept-card cursor-pointer p-4 rounded-2xl bg-[#1A140F]/40 border border-amber-950/80 transition-all hover:bg-[#1A140F]/80 flex items-center gap-4.5';
+        }
+      });
+
+      updatePreviews();
+    }
+
+    function setShape(shape) {
+      activeShape = shape;
+
+      document.getElementById('shape-ios').className = shape === 'ios'
+        ? 'px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold transition-all'
+        : 'px-2.5 py-1 rounded-lg text-amber-200/70 hover:text-white transition-all';
+      document.getElementById('shape-round').className = shape === 'round'
+        ? 'px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold transition-all'
+        : 'px-2.5 py-1 rounded-lg text-amber-200/70 hover:text-white transition-all';
+      document.getElementById('shape-circle').className = shape === 'circle'
+        ? 'px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold transition-all'
+        : 'px-2.5 py-1 rounded-lg text-amber-200/70 hover:text-white transition-all';
+
+      applyShape();
+    }
+
+    function applyShape() {
+      const rxMap = {
+        ios: '114',
+        round: '64',
+        circle: '256',
+      };
+      const rxVal = rxMap[activeShape] || '114';
+      const borderRx = Math.max(0, parseInt(rxVal) - 1).toString();
+
+      document.querySelectorAll('.icon-bg').forEach((el) => el.setAttribute('rx', rxVal));
+      document.querySelectorAll('.icon-bg-border').forEach((el) => el.setAttribute('rx', borderRx));
+    }
+
+    function setWallpaper(type) {
+      const screen = document.getElementById('phone-screen');
+      const label = document.getElementById('app-label-text');
+      const clock = document.getElementById('clock-text');
+
+      if (type === 'dark') {
+        screen.style.backgroundImage = 'linear-gradient(135deg, #140f0a 0%, #1f1710 50%, #080604 100%)';
+        label.className = 'text-[10.5px] text-amber-100/95 font-medium tracking-tight drop-shadow-md';
+        clock.className = 'text-white/80 font-mono';
+      } else if (type === 'railgun') {
+        screen.style.backgroundImage = 'linear-gradient(135deg, #f59e0b 0%, #ea580c 40%, #0284c7 80%, #0f172a 100%)';
+        label.className = 'text-[10.5px] text-white font-semibold tracking-tight drop-shadow-md';
+        clock.className = 'text-white font-mono';
+      } else if (type === 'sunset') {
+        screen.style.backgroundImage = 'linear-gradient(135deg, #fb923c 0%, #c026d3 50%, #1e1b4b 100%)';
+        label.className = 'text-[10.5px] text-white/95 font-medium tracking-tight drop-shadow-md';
+        clock.className = 'text-white/80 font-mono';
+      } else if (type === 'light') {
+        screen.style.backgroundImage = 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)';
+        label.className = 'text-[10.5px] text-amber-950 font-bold tracking-tight drop-shadow-sm';
+        clock.className = 'text-amber-950 font-mono font-bold';
+      }
+    }
+
+    function downloadActiveSVG() {
+      const svg = document.getElementById(`svg-concept-${activeConceptId}`);
+      if (!svg) return;
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `01flow-icon-railgun-${activeConceptId}.svg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      updatePreviews();
+    });
+  </script>
+</body>
+</html>
