@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>01flow (思维流) - App 图标设计工坊 (Icon Playground)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+    }
+    .squircle-ios {
+      border-radius: 22.37%;
+    }
+    .squircle-android {
+      border-radius: 50%;
+    }
+    .dock-reflection {
+      -webkit-box-reflect: below 2px linear-gradient(transparent 65%, rgba(255, 255, 255, 0.2));
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center py-6 px-4">
+
+  <!-- 顶部 Header -->
+  <header class="w-full max-w-6xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-slate-800/80 mb-8">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-400 p-[1px] flex items-center justify-center shadow-lg shadow-blue-500/20">
+        <div class="w-full h-full bg-slate-950 rounded-[11px] flex items-center justify-center">
+          <span class="font-mono font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 text-base">01</span>
+        </div>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold text-white flex items-center gap-2">
+          思维流 (01flow) · App 图标设计工坊
+          <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30">Icon Playground v1.0</span>
+        </h1>
+        <p class="text-xs text-slate-400 mt-0.5">5 组独创设计方案 · 手机桌面与 Dock 拟真预览 · 支持多尺寸 SVG / PNG 一键导出</p>
+      </div>
+    </div>
+
+    <!-- 右侧全局控制栏 -->
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- 形状切换 -->
+      <div class="bg-slate-900/90 border border-slate-800 p-1 rounded-xl flex items-center gap-1 text-xs">
+        <span class="text-slate-400 px-2">形状:</span>
+        <button onclick="setShape('ios')" id="shape-ios" class="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-medium transition-all">iOS 连续曲率</button>
+        <button onclick="setShape('round')" id="shape-round" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all">圆角矩形</button>
+        <button onclick="setShape('circle')" id="shape-circle" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all">圆形 (Android)</button>
+      </div>
+
+      <!-- 导出当前选中 -->
+      <button onclick="downloadActiveSVG()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-900/30 transition-all active:scale-95">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+        <span>导出选中图标 (SVG)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主工作台：左侧 5 组方案卡片，右侧实时场景仿真 -->
+  <div class="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+    <!-- 左侧：5 款设计方案选择器 (占据 7 列) -->
+    <div class="lg:col-span-7 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-300 flex items-center gap-2">
+          <i data-lucide="sparkles" class="w-4 h-4 text-blue-400"></i>
+          <span>精选设计方案 (点击选中可联动右侧实景)</span>
+        </h2>
+        <span class="text-xs text-slate-500">已选中: <span id="active-concept-name" class="text-blue-400 font-medium">方案 1 · 量子脉流 (Quantum 01)</span></span>
+      </div>
+
+      <!-- 方案列表 -->
+      <div class="grid grid-cols-1 gap-3.5" id="concepts-grid">
+
+        <!-- 方案 1: 量子脉流 (Quantum 01) -->
+        <div onclick="selectConcept(1)" id="concept-card-1" class="concept-card cursor-pointer p-4 rounded-2xl bg-slate-900/80 border-2 border-blue-500 shadow-lg shadow-blue-500/10 transition-all hover:bg-slate-900 flex items-center gap-4">
+          <div class="w-16 h-16 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-1" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-grad-1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#0B0F19" />
+                  <stop offset="50%" stop-color="#0F172A" />
+                  <stop offset="100%" stop-color="#020617" />
+                </linearGradient>
+                <linearGradient id="glow-grad-1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#38BDF8" />
+                  <stop offset="50%" stop-color="#3B82F6" />
+                  <stop offset="100%" stop-color="#6366F1" />
+                </linearGradient>
+                <linearGradient id="flow-line-1" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#06B6D4" />
+                  <stop offset="100%" stop-color="#60A5FA" />
+                </linearGradient>
+                <filter id="shadow-1" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#2563EB" flood-opacity="0.45" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-grad-1)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(255,255,255,0.12)" stroke-width="2" />
+              <!-- 几何'0'：发光能量环 -->
+              <circle cx="210" cy="256" r="100" stroke="url(#glow-grad-1)" stroke-width="36" stroke-linecap="round" filter="url(#shadow-1)" />
+              <!-- 几何'1'：流线穿刺脉冲 -->
+              <path d="M330 156 V 356" stroke="url(#flow-line-1)" stroke-width="36" stroke-linecap="round" filter="url(#shadow-1)" />
+              <path d="M290 196 L 330 156" stroke="url(#flow-line-1)" stroke-width="36" stroke-linecap="round" />
+              <!-- 核心流转节点小光点 -->
+              <circle cx="210" cy="156" r="14" fill="#E0F2FE" filter="url(#shadow-1)" />
+              <circle cx="330" cy="356" r="14" fill="#93C5FD" filter="url(#shadow-1)" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-white">方案 1 · 量子脉流 (Quantum 01)</h3>
+              <span class="text-[10px] px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-md font-mono">极简几何 · 科技能量</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              将 “0”（发光环形思考空间）与 “1”（直线流动的灵感脉冲）拓扑融合，右上角与底部嵌入流动节点，象征念头从无到有的瞬时捕捉。
+            </p>
+          </div>
+        </div>
+
+        <!-- 方案 2: 思维生长树 (Branching Genesis) -->
+        <div onclick="selectConcept(2)" id="concept-card-2" class="concept-card cursor-pointer p-4 rounded-2xl bg-slate-900/50 border border-slate-800 transition-all hover:bg-slate-900 flex items-center gap-4">
+          <div class="w-16 h-16 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-2" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-grad-2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#022C22" />
+                  <stop offset="40%" stop-color="#064E3B" />
+                  <stop offset="100%" stop-color="#020617" />
+                </linearGradient>
+                <linearGradient id="tree-grad-2" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#10B981" />
+                  <stop offset="50%" stop-color="#34D399" />
+                  <stop offset="100%" stop-color="#6EE7B7" />
+                </linearGradient>
+                <filter id="shadow-2" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#10B981" flood-opacity="0.4" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-grad-2)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(255,255,255,0.12)" stroke-width="2" />
+              <!-- 主干与极简生成分支树 (⎇) -->
+              <path d="M190 380 V 170" stroke="url(#tree-grad-2)" stroke-width="32" stroke-linecap="round" filter="url(#shadow-2)" />
+              <path d="M190 280 C 190 220, 240 200, 320 200 V 130" stroke="url(#tree-grad-2)" stroke-width="32" stroke-linecap="round" filter="url(#shadow-2)" />
+              <path d="M260 200 C 290 200, 330 230, 330 300 V 380" stroke="url(#tree-grad-2)" stroke-width="32" stroke-linecap="round" filter="url(#shadow-2)" />
+              <!-- 分支萌芽节点 -->
+              <circle cx="190" cy="150" r="22" fill="#A7F3D0" filter="url(#shadow-2)" />
+              <circle cx="320" cy="120" r="18" fill="#6EE7B7" filter="url(#shadow-2)" />
+              <circle cx="330" cy="380" r="18" fill="#34D399" filter="url(#shadow-2)" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-white">方案 2 · 思维生长树 (Branching Genesis)</h3>
+              <span class="text-[10px] px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-md font-mono">自然分支 · 思想生长</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              以 01flow 独创的「⎇ 分支树」为灵感原型。深翠绿到电光翡翠色阶，象征零散的想法如同生命脉络般自由延展与生生不息。
+            </p>
+          </div>
+        </div>
+
+        <!-- 方案 3: 时空穿梭线 (Synapse Thread) -->
+        <div onclick="selectConcept(3)" id="concept-card-3" class="concept-card cursor-pointer p-4 rounded-2xl bg-slate-900/50 border border-slate-800 transition-all hover:bg-slate-900 flex items-center gap-4">
+          <div class="w-16 h-16 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-3" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-grad-3" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#1E1B4B" />
+                  <stop offset="60%" stop-color="#0F172A" />
+                  <stop offset="100%" stop-color="#030712" />
+                </linearGradient>
+                <linearGradient id="ribbon-3" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#A855F7" />
+                  <stop offset="50%" stop-color="#EC4899" />
+                  <stop offset="100%" stop-color="#F43F5E" />
+                </linearGradient>
+                <linearGradient id="cyan-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#38BDF8" />
+                  <stop offset="100%" stop-color="#818CF8" />
+                </linearGradient>
+                <filter id="shadow-3" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#EC4899" flood-opacity="0.4" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-grad-3)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(255,255,255,0.12)" stroke-width="2" />
+              <!-- 双纽线 / 极光思维流 (∞ 与 01 丝带) -->
+              <path d="M140 330 C 140 220, 220 180, 256 256 C 292 332, 372 292, 372 182 C 372 110, 292 110, 256 182 C 220 256, 140 220, 140 330 Z" stroke="url(#ribbon-3)" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow-3)" />
+              <!-- 跨时间锚点 (0 与 1 的发光信标) -->
+              <circle cx="256" cy="182" r="16" fill="#FDE047" />
+              <circle cx="256" cy="256" r="14" fill="#38BDF8" />
+              <circle cx="372" cy="182" r="18" fill="#F472B6" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-white">方案 3 · 时空穿梭线 (Synapse Thread)</h3>
+              <span class="text-[10px] px-2 py-0.5 bg-pink-500/20 text-pink-300 rounded-md font-mono">跨月穿透 · 灵感纽带</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              以莫比乌斯环与「🔗 思维线」穿透时空的流光为灵感，展现时间轴上散落在各处想法被一条无形丝带紧密串联的美感。
+            </p>
+          </div>
+        </div>
+
+        <!-- 方案 4: 极简纯粹白 (Zen Monolith 01) -->
+        <div onclick="selectConcept(4)" id="concept-card-4" class="concept-card cursor-pointer p-4 rounded-2xl bg-slate-900/50 border border-slate-800 transition-all hover:bg-slate-900 flex items-center gap-4">
+          <div class="w-16 h-16 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-4" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-grad-4" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FFFFFF" />
+                  <stop offset="60%" stop-color="#F8FAFC" />
+                  <stop offset="100%" stop-color="#E2E8F0" />
+                </linearGradient>
+                <linearGradient id="ink-grad-4" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#0F172A" />
+                  <stop offset="100%" stop-color="#1E293B" />
+                </linearGradient>
+                <filter id="shadow-4" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#000000" flood-opacity="0.15" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-grad-4)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(0,0,0,0.06)" stroke-width="2" />
+              <!-- 纯白底上的高级黑质感 01 徽标 -->
+              <!-- 0 -->
+              <rect x="136" y="166" width="100" height="180" rx="50" stroke="url(#ink-grad-4)" stroke-width="32" filter="url(#shadow-4)" />
+              <!-- 1 -->
+              <path d="M326 166 V 346" stroke="url(#ink-grad-4)" stroke-width="32" stroke-linecap="round" filter="url(#shadow-4)" />
+              <path d="M286 206 L 326 166" stroke="url(#ink-grad-4)" stroke-width="32" stroke-linecap="round" />
+              <!-- 点睛电光蓝原点 -->
+              <circle cx="186" cy="256" r="16" fill="#3B82F6" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-white">方案 4 · 极简墨白 (Zen Monolith 01)</h3>
+              <span class="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-800 rounded-md font-mono font-medium">素雅极简 · 纸墨质感</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              纯净纸白背景与深邃墨黑线条，0 的核心点缀一颗极简电光蓝原点，致敬 Apple、Linear 的顶级极简克制美学。
+            </p>
+          </div>
+        </div>
+
+        <!-- 方案 5: 微晶流光透镜 (Cyber Glass Prism) -->
+        <div onclick="selectConcept(5)" id="concept-card-5" class="concept-card cursor-pointer p-4 rounded-2xl bg-slate-900/50 border border-slate-800 transition-all hover:bg-slate-900 flex items-center gap-4">
+          <div class="w-16 h-16 flex-shrink-0 preview-icon-container">
+            <svg id="svg-concept-5" class="w-full h-full" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg-grad-5" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#18181B" />
+                  <stop offset="50%" stop-color="#09090B" />
+                  <stop offset="100%" stop-color="#000000" />
+                </linearGradient>
+                <linearGradient id="glass-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="rgba(255,255,255,0.2)" />
+                  <stop offset="100%" stop-color="rgba(255,255,255,0.02)" />
+                </linearGradient>
+                <linearGradient id="prism-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#38BDF8" />
+                  <stop offset="35%" stop-color="#818CF8" />
+                  <stop offset="70%" stop-color="#C084FC" />
+                  <stop offset="100%" stop-color="#F472B6" />
+                </linearGradient>
+                <filter id="glow-5" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="24" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+              <rect class="icon-bg" width="512" height="512" rx="114" fill="url(#bg-grad-5)" />
+              <rect class="icon-bg-border" width="510" height="510" x="1" y="1" rx="113" stroke="rgba(255,255,255,0.15)" stroke-width="2" />
+              <!-- 背景柔和环境光晕 -->
+              <circle cx="256" cy="256" r="140" fill="url(#prism-grad)" opacity="0.25" filter="url(#glow-5)" />
+              <!-- 毛玻璃晶体质感 01 几何 -->
+              <rect x="140" y="160" width="104" height="192" rx="52" stroke="url(#prism-grad)" stroke-width="28" fill="url(#glass-grad)" />
+              <path d="M328 160 V 352" stroke="url(#prism-grad)" stroke-width="28" stroke-linecap="round" />
+              <path d="M288 200 L 328 160" stroke="url(#prism-grad)" stroke-width="28" stroke-linecap="round" />
+              <circle cx="328" cy="160" r="12" fill="#FFFFFF" />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-white">方案 5 · 微晶流光 (Cyber Glass Prism)</h3>
+              <span class="text-[10px] px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-md font-mono">毛玻璃 · 晶体流光</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              暗黑 OLED 纯净背景，内嵌多重折射棱镜流光（蓝/紫/粉渐变），配合玻璃微拟物光泽，呈现科技艺术品般的高级质感。
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 右侧：真实场景与各尺寸实机仿真 (占据 5 列) -->
+    <div class="lg:col-span-5 space-y-6">
+
+      <!-- 1. 手机桌面仿真 (iOS / Android 桌面环境) -->
+      <div class="glass-panel p-5 rounded-3xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i data-lucide="smartphone" class="w-4 h-4 text-blue-400"></i>
+            <span class="text-xs font-semibold text-white">手机主屏幕 (Home Screen) 实境仿真</span>
+          </div>
+          <!-- 壁纸切换 -->
+          <div class="flex items-center gap-1">
+            <button onclick="setWallpaper('dark')" class="w-4 h-4 rounded-full bg-slate-800 border border-slate-600" title="深色极光壁纸"></button>
+            <button onclick="setWallpaper('mountain')" class="w-4 h-4 rounded-full bg-gradient-to-tr from-amber-500 to-indigo-600" title="日暮山川壁纸"></button>
+            <button onclick="setWallpaper('abstract')" class="w-4 h-4 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600" title="电光渐变壁纸"></button>
+          </div>
+        </div>
+
+        <!-- 手机桌面屏幕模拟器 -->
+        <div id="phone-screen" class="w-full h-64 rounded-2xl relative overflow-hidden flex flex-col justify-between p-4 bg-cover bg-center transition-all duration-300 shadow-2xl border border-white/10" style="background-image: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #020617 100%);">
+          <!-- 顶部状态栏 -->
+          <div class="flex items-center justify-between text-[10px] text-white/80 font-mono select-none">
+            <span>09:41</span>
+            <div class="flex items-center gap-1 text-[9px]">
+              <span>5G</span>
+              <div class="w-4 h-2 border border-white/80 rounded-xs p-0.5 flex items-center">
+                <div class="w-full h-full bg-white"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 桌面 App 图标网格 (4 列) -->
+          <div class="grid grid-cols-4 gap-3 pt-2">
+            <!-- 我们的 思维流 01flow 图标 (焦点高亮) -->
+            <div class="flex flex-col items-center gap-1 group">
+              <div class="w-12 h-12 relative shadow-lg shadow-black/40 transition-transform group-hover:scale-105" id="sim-icon-container">
+                <!-- 动态克隆 SVG 插入点 -->
+              </div>
+              <span class="text-[10px] text-white/95 font-medium tracking-tight drop-shadow-md">思维流</span>
+            </div>
+
+            <!-- 其他陪衬 App 1: 相机 -->
+            <div class="flex flex-col items-center gap-1 opacity-75">
+              <div class="w-12 h-12 rounded-[11px] bg-gradient-to-b from-gray-200 to-gray-400 flex items-center justify-center shadow-md">
+                <i data-lucide="camera" class="w-6 h-6 text-gray-800"></i>
+              </div>
+              <span class="text-[10px] text-white/80 drop-shadow-md">相机</span>
+            </div>
+
+            <!-- 其他陪衬 App 2: 日历 -->
+            <div class="flex flex-col items-center gap-1 opacity-75">
+              <div class="w-12 h-12 rounded-[11px] bg-white flex flex-col items-center justify-center shadow-md text-red-500">
+                <span class="text-[8px] font-bold uppercase">AUG</span>
+                <span class="text-sm font-bold text-gray-900 -mt-1 font-mono">26</span>
+              </div>
+              <span class="text-[10px] text-white/80 drop-shadow-md">日历</span>
+            </div>
+
+            <!-- 其他陪衬 App 3: 设置 -->
+            <div class="flex flex-col items-center gap-1 opacity-75">
+              <div class="w-12 h-12 rounded-[11px] bg-gradient-to-b from-gray-600 to-gray-800 flex items-center justify-center shadow-md">
+                <i data-lucide="settings" class="w-6 h-6 text-gray-300"></i>
+              </div>
+              <span class="text-[10px] text-white/80 drop-shadow-md">设置</span>
+            </div>
+          </div>
+
+          <!-- 底部 Dock 栏 -->
+          <div class="bg-white/20 backdrop-blur-xl border border-white/20 rounded-2xl p-2 flex items-center justify-around shadow-lg">
+            <div class="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-white shadow-sm"><i data-lucide="phone" class="w-5 h-5"></i></div>
+            <div class="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center text-white shadow-sm"><i data-lucide="message-circle" class="w-5 h-5"></i></div>
+            <div class="w-10 h-10 rounded-xl bg-indigo-500 flex items-center justify-center text-white shadow-sm"><i data-lucide="compass" class="w-5 h-5"></i></div>
+            <div class="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-white shadow-sm"><i data-lucide="music" class="w-5 h-5"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 全尺寸规格预览 (512px / 192px / 64px / 32px / 16px) -->
+      <div class="glass-panel p-5 rounded-3xl space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i data-lucide="layers" class="w-4 h-4 text-emerald-400"></i>
+            <span class="text-xs font-semibold text-white">多分辨率清晰度校验</span>
+          </div>
+          <span class="text-[11px] text-slate-400">各尺寸下保持高辨识度</span>
+        </div>
+
+        <div class="flex items-end justify-between gap-3 pt-2 bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
+          <!-- 128px -->
+          <div class="flex flex-col items-center gap-1.5">
+            <div class="w-16 h-16 shadow-lg shadow-black/50" id="size-preview-128"></div>
+            <span class="text-[10px] text-slate-500 font-mono">128px</span>
+          </div>
+          <!-- 64px (Home screen) -->
+          <div class="flex flex-col items-center gap-1.5">
+            <div class="w-10 h-10 shadow-md" id="size-preview-64"></div>
+            <span class="text-[10px] text-slate-500 font-mono">64px (桌面)</span>
+          </div>
+          <!-- 32px (Favicon / Taskbar) -->
+          <div class="flex flex-col items-center gap-1.5">
+            <div class="w-7 h-7" id="size-preview-32"></div>
+            <span class="text-[10px] text-slate-500 font-mono">32px (状态栏)</span>
+          </div>
+          <!-- 16px (Browser tab) -->
+          <div class="flex flex-col items-center gap-1.5">
+            <div class="w-4 h-4" id="size-preview-16"></div>
+            <span class="text-[10px] text-slate-500 font-mono">16px (Favicon)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 一键应用到本项目的说明 -->
+      <div class="glass-panel p-5 rounded-3xl space-y-2 border-l-4 border-l-blue-500">
+        <h4 class="text-xs font-semibold text-white flex items-center gap-1.5">
+          <i data-lucide="check-circle" class="w-4 h-4 text-blue-400"></i>
+          <span>如何应用为你喜爱的 App 图标？</span>
+        </h4>
+        <p class="text-[11.5px] text-slate-400 leading-relaxed">
+          点击右上角的 <strong class="text-slate-200">「导出选中图标 (SVG)」</strong> 即可下载。选中的矢量 SVG 可无损缩放为任意尺寸，已同步准备适配 Android `ic_launcher` 与 Web `favicon.svg`。
+        </p>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    let activeConceptId = 1;
+    let activeShape = 'ios'; // 'ios', 'round', 'circle'
+
+    const conceptNames = {
+      1: '方案 1 · 量子脉流 (Quantum 01)',
+      2: '方案 2 · 思维生长树 (Branching Genesis)',
+      3: '方案 3 · 时空穿梭线 (Synapse Thread)',
+      4: '方案 4 · 极简墨白 (Zen Monolith 01)',
+      5: '方案 5 · 微晶流光 (Cyber Glass Prism)',
+    };
+
+    function updatePreviews() {
+      const activeSvg = document.getElementById(`svg-concept-${activeConceptId}`);
+      if (!activeSvg) return;
+
+      const svgHtml = activeSvg.outerHTML;
+
+      // 更新手机桌面中的图标
+      const simContainer = document.getElementById('sim-icon-container');
+      simContainer.innerHTML = svgHtml;
+
+      // 更新多尺寸预览
+      ['128', '64', '32', '16'].forEach((size) => {
+        const el = document.getElementById(`size-preview-${size}`);
+        if (el) el.innerHTML = svgHtml;
+      });
+
+      // 应用当前圆角形状
+      applyShape();
+    }
+
+    function selectConcept(id) {
+      activeConceptId = id;
+      document.getElementById('active-concept-name').innerText = conceptNames[id];
+
+      // 更新卡片激活态
+      for (let i = 1; i <= 5; i++) {
+        const card = document.getElementById(`concept-card-${i}`);
+        if (i === id) {
+          card.className = 'concept-card cursor-pointer p-4 rounded-2xl bg-slate-900/90 border-2 border-blue-500 shadow-lg shadow-blue-500/10 transition-all flex items-center gap-4';
+        } else {
+          card.className = 'concept-card cursor-pointer p-4 rounded-2xl bg-slate-900/40 border border-slate-800/80 transition-all hover:bg-slate-900/80 flex items-center gap-4';
+        }
+      }
+
+      updatePreviews();
+    }
+
+    function setShape(shape) {
+      activeShape = shape;
+
+      document.getElementById('shape-ios').className = shape === 'ios'
+        ? 'px-2.5 py-1 rounded-lg bg-blue-600 text-white font-medium transition-all'
+        : 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all';
+      document.getElementById('shape-round').className = shape === 'round'
+        ? 'px-2.5 py-1 rounded-lg bg-blue-600 text-white font-medium transition-all'
+        : 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all';
+      document.getElementById('shape-circle').className = shape === 'circle'
+        ? 'px-2.5 py-1 rounded-lg bg-blue-600 text-white font-medium transition-all'
+        : 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all';
+
+      applyShape();
+    }
+
+    function applyShape() {
+      const rxMap = {
+        ios: '114',
+        round: '64',
+        circle: '256',
+      };
+      const rxVal = rxMap[activeShape] || '114';
+      const borderRx = Math.max(0, parseInt(rxVal) - 1).toString();
+
+      document.querySelectorAll('.icon-bg').forEach((el) => el.setAttribute('rx', rxVal));
+      document.querySelectorAll('.icon-bg-border').forEach((el) => el.setAttribute('rx', borderRx));
+    }
+
+    function setWallpaper(type) {
+      const screen = document.getElementById('phone-screen');
+      if (type === 'dark') {
+        screen.style.backgroundImage = 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #020617 100%)';
+      } else if (type === 'mountain') {
+        screen.style.backgroundImage = 'linear-gradient(135deg, #f59e0b 0%, #d97706 30%, #4338ca 70%, #1e1b4b 100%)';
+      } else if (type === 'abstract') {
+        screen.style.backgroundImage = 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #6366f1 100%)';
+      }
+    }
+
+    function downloadActiveSVG() {
+      const svg = document.getElementById(`svg-concept-${activeConceptId}`);
+      if (!svg) return;
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `01flow-icon-concept-${activeConceptId}.svg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    // 初始化
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      updatePreviews();
+    });
+  </script>
+</body>
+</html>
