@@ -3,7 +3,7 @@ import { R2Client } from './r2-client';
 import { R2SyncService } from './r2-sync';
 import { FlowRepositoryLike, SyncTombstone, SyncReport } from './types';
 import { isR2Configured, loadR2Settings, loadTombstones, saveTombstoneRecord } from './credentials';
-import { RecordItem, TagItem, ThreadItem } from '../types';
+import { RecordItem, TagItem, ThreadItem, HomeLink } from '../types';
 
 let inMemoryTombstones: SyncTombstone[] = loadTombstones();
 
@@ -67,6 +67,9 @@ export const flowRepository: FlowRepositoryLike = {
     }));
     return prev.length !== useFlowStore.getState().tags.length;
   },
+
+  getHomeLink: () => useFlowStore.getState().homeLink,
+  saveHomeLink: (link: HomeLink | null) => useFlowStore.setState({ homeLink: link }),
 
   getTombstones: () => inMemoryTombstones,
   saveTombstone: (tombstone: SyncTombstone) => {

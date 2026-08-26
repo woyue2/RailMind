@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { RecordItem, TagItem, ThreadItem, EnrichedRecordItem } from '../types';
+import { RecordItem, TagItem, ThreadItem, EnrichedRecordItem, HomeLink } from '../types';
 import { generateId } from '../utils/dateUtils';
 import { createR2SyncService } from '../sync';
 import { loadR2Settings } from '../sync/credentials';
@@ -20,7 +20,7 @@ function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) 
 }
 
 interface FlowState {
-  homeLink: { shownName: string; href: string } | null;
+  homeLink: HomeLink | null;
   records: RecordItem[];
   tags: TagItem[];
   threads: ThreadItem[];
@@ -508,7 +508,11 @@ export const useFlowStore = create<FlowState>()(
 
       setSelectedDate: (date) => set({ selectedDate: date }),
 
-      setHomeLink: (homeLink) => set({ homeLink }),
+      setHomeLink: (homeLink) => {
+        const nextLink = homeLink ? { ...homeLink, updatedAt: new Date().toISOString() } : null;
+        set({ homeLink: nextLink });
+        triggerAutoSync((sync) => sync?.pushHomeLink(nextLink));
+      },
 
       resetToDefaultData: () => {
         set({

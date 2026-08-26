@@ -1,4 +1,4 @@
-import { RecordItem, TagItem, ThreadItem } from '../types';
+import { RecordItem, TagItem, ThreadItem, HomeLink } from '../types';
 
 export interface R2Config {
   enabled: boolean;
@@ -45,6 +45,8 @@ export interface FlowRepositoryLike {
   getTag(id: string): TagItem | undefined;
   saveTag(tag: TagItem): void;
   deleteTag(id: string): boolean;
+  getHomeLink(): HomeLink | null;
+  saveHomeLink(link: HomeLink | null): void;
 
   getTombstones(): SyncTombstone[];
   saveTombstone(tombstone: SyncTombstone): void;

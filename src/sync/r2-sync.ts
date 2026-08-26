@@ -1,4 +1,4 @@
-import { RecordItem, TagItem, ThreadItem } from '../types';
+import { RecordItem, TagItem, ThreadItem, HomeLink } from '../types';
 import {
   R2ClientLike,
   SyncReport,
@@ -66,6 +66,12 @@ export class R2SyncService {
         await this.client.putJson(`tags/${id}.json`, current);
       }
     });
+  }
+
+  pushHomeLink(link: HomeLink | null): Promise<void> {
+    return enqueue(() => link
+      ? this.client.putJson('settings/home-link.json', link)
+      : this.client.delete('settings/home-link.json'));
   }
 
   deleteRecord(id: string): Promise<void> {
@@ -156,6 +162,17 @@ export class R2SyncService {
         () => '1970-01-01T00:00:00.000Z',
         report
       );
+
+      const remoteLinkItem = (await this.client.list('settings/')).find((item) => item.key === 'settings/home-link.json');
+      const remoteLink = remoteLinkItem ? await this.client.getJson<HomeLink>(remoteLinkItem.key) : undefined;
+      const localLink = this.repository.getHomeLink();
+      if (remoteLink && (!localLink || new Date(remoteLink.updatedAt).getTime() > new Date(localLink.updatedAt).getTime())) {
+        this.repository.saveHomeLink(remoteLink);
+        report.pulled++;
+      } else if (localLink && (!remoteLinkItem || new Date(localLink.updatedAt).getTime() > remoteLinkItem.lastModified.getTime())) {
+        await this.client.putJson('settings/home-link.json', localLink);
+        report.pushed++;
+      }
     } catch (error) {
       report.errors.push(error instanceof Error ? error.message : String(error));
     }

@@ -23,6 +23,12 @@ export interface ThreadItem {
   last_used_at: string; // 用于"最近使用"排序, 每次有新记录关联时更新
 }
 
+export interface HomeLink {
+  shownName: string;
+  href: string;
+  updatedAt: string;
+}
+
 // 包含关联解析的展示记录
 export interface EnrichedRecordItem extends RecordItem {
   thread?: ThreadItem;
