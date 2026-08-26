@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>01flow - 树形缩进美化 Playground</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* 方案 A: 丝滑圆角导轨 (Curved Rail) - 精准对齐时间戳内侧，平滑转折 */
+    .style-curved {
+      margin-left: 20px;
+      padding-left: 14px;
+      position: relative;
+    }
+    .style-curved .tree-node::before {
+      content: '';
+      position: absolute;
+      left: -14px;
+      top: 0;
+      width: 12px;
+      height: 18px;
+      border-left: 1.5px solid #CBD5E1;
+      border-bottom: 1.5px solid #CBD5E1;
+      border-bottom-left-radius: 6px;
+    }
+    .style-curved .tree-node:not(.is-last)::after {
+      content: '';
+      position: absolute;
+      left: -14px;
+      top: 18px;
+      bottom: 0;
+      border-left: 1.5px solid #CBD5E1;
+    }
+    .style-curved .sub-tree-container {
+      margin-left: 18px;
+      padding-left: 14px;
+      position: relative;
+    }
+    .style-curved .sub-tree-node::before {
+      content: '';
+      position: absolute;
+      left: -14px;
+      top: 0;
+      width: 12px;
+      height: 18px;
+      border-left: 1.5px solid #CBD5E1;
+      border-bottom: 1.5px solid #CBD5E1;
+      border-bottom-left-radius: 6px;
+    }
+
+    /* 方案 B: 极简虚线树 (Minimal Dashed) */
+    .style-minimal {
+      margin-left: 22px;
+      padding-left: 12px;
+      border-left: 1.5px dashed #E2E8F0;
+    }
+    .style-minimal .tree-node::before {
+      content: '';
+      position: absolute;
+      left: -12px;
+      top: 18px;
+      width: 10px;
+      border-bottom: 1.5px dashed #E2E8F0;
+    }
+    .style-minimal .sub-tree-container {
+      margin-left: 18px;
+      padding-left: 12px;
+      border-left: 1.5px dashed #E2E8F0;
+    }
+
+    /* 方案 C: 轻量背景块嵌套 (Soft Card Nesting) */
+    .style-card {
+      margin-left: 24px;
+      padding: 6px 8px;
+      background: #F8FAFC;
+      border-radius: 12px;
+      border: 1px solid #F1F5F9;
+    }
+    .style-card .sub-tree-container {
+      margin-left: 16px;
+      padding: 4px 6px;
+      background: #FFFFFF;
+      border-radius: 8px;
+      border: 1px solid #E2E8F0;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body class="bg-slate-900 min-h-screen flex flex-col items-center justify-center p-4 text-slate-800">
+
+  <!-- 顶部方案切换器 -->
+  <div class="mb-4 bg-slate-800/90 border border-slate-700/80 p-1.5 rounded-xl flex items-center gap-2 text-xs text-white">
+    <span class="text-slate-400 pl-2 font-medium">缩进风格体验:</span>
+    <button onclick="switchStyle('curved')" id="btn-curved" class="px-3 py-1.5 rounded-lg bg-blue-600 font-medium transition-all">
+      方案 A: 丝滑圆角导轨 (推荐)
+    </button>
+    <button onclick="switchStyle('minimal')" id="btn-minimal" class="px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-700 transition-all">
+      方案 B: 极简虚线树
+    </button>
+    <button onclick="switchStyle('card')" id="btn-card" class="px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-700 transition-all">
+      方案 C: 轻量背景块嵌套
+    </button>
+  </div>
+
+  <!-- 手机壳模拟容器 -->
+  <div class="w-full max-w-[390px] h-[780px] bg-white rounded-[40px] shadow-2xl border-[10px] border-slate-800 flex flex-col overflow-hidden relative">
+
+    <!-- 顶部状态栏 -->
+    <div class="h-10 bg-white w-full flex items-center justify-between px-7 pt-1 flex-shrink-0 select-none z-20">
+      <span class="text-xs font-semibold font-mono text-gray-900">09:41</span>
+      <div class="w-24 h-4 bg-black rounded-full"></div>
+      <div class="flex items-center gap-1.5 text-xs text-gray-800 font-medium">
+        <span class="text-[10px]">5G</span>
+        <div class="w-5 h-2.5 border border-gray-800 rounded-xs p-0.5 flex items-center">
+          <div class="w-full h-full bg-gray-800"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 记录流头部 -->
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white/95">
+      <div class="flex items-center gap-2">
+        <span class="font-semibold text-gray-900 text-sm tracking-tight">今天 8月26日 · 7条</span>
+      </div>
+      <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md font-medium">回顾</span>
+    </div>
+
+    <!-- 主时间轴列表 -->
+    <div class="flex-1 overflow-y-auto px-3 py-3 space-y-1" id="timeline-container">
+
+      <!-- 根记录 1 -->
+      <div class="py-2 px-2.5 rounded-lg hover:bg-gray-50 flex items-start group">
+        <span class="text-[11.5px] font-mono text-gray-400 mt-0.5 w-11 flex-shrink-0">09:12</span>
+        <div class="flex-1 text-[13.5px] text-gray-900 leading-snug">先随便记记，今天感觉一般</div>
+        <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-gray-400">
+          <i data-lucide="git-branch" class="w-3.5 h-3.5"></i>
+          <i data-lucide="link-2" class="w-3.5 h-3.5"></i>
+        </div>
+      </div>
+
+      <!-- 根记录 2 (带分支子节点) -->
+      <div class="space-y-0.5">
+        <!-- 根节点 -->
+        <div class="py-2 px-2.5 rounded-lg hover:bg-gray-50 flex items-start group">
+          <span class="text-[11.5px] font-mono text-gray-400 mt-0.5 w-11 flex-shrink-0">09:40</span>
+          <div class="flex-1 min-w-0 pr-1">
+            <div class="text-[13.5px] text-gray-900 leading-snug">10月3日去看演唱会</div>
+            <div class="mt-1">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200/80 rounded-full">
+                <span>🔗</span>演唱会
+              </span>
+            </div>
+          </div>
+          <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-gray-400">
+            <i data-lucide="git-branch" class="w-3.5 h-3.5"></i>
+            <i data-lucide="link-2" class="w-3.5 h-3.5"></i>
+          </div>
+        </div>
+
+        <!-- 子分支容器: 方案动态渲染 -->
+        <div id="tree-branch-container" class="style-curved">
+          <!-- 子节点 1 -->
+          <div class="tree-node relative">
+            <div class="py-2 px-2.5 rounded-lg hover:bg-gray-50 flex items-start group child-row">
+              <span class="text-[11.5px] font-mono text-gray-400 mt-0.5 w-11 flex-shrink-0">10:05</span>
+              <div class="flex-1 text-[13.5px] text-gray-800 leading-snug">因为B更快能看到效果</div>
+              <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-gray-400">
+                <i data-lucide="git-branch" class="w-3.5 h-3.5"></i>
+              </div>
+            </div>
+
+            <!-- 二级子节点 -->
+            <div class="sub-tree-container">
+              <div class="sub-tree-node relative">
+                <div class="py-2 px-2.5 rounded-lg hover:bg-gray-50 flex items-start group child-row">
+                  <span class="text-[11.5px] font-mono text-gray-400 mt-0.5 w-11 flex-shrink-0">10:40</span>
+                  <div class="flex-1 text-[13.5px] text-gray-800 leading-snug">那就先定第一步</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 子节点 2 (兄弟分支) -->
+          <div class="tree-node relative is-last">
+            <div class="py-2 px-2.5 rounded-lg hover:bg-gray-50 flex items-start group child-row">
+              <span class="text-[11.5px] font-mono text-gray-400 mt-0.5 w-11 flex-shrink-0">10:20</span>
+              <div class="flex-1 min-w-0 pr-1">
+                <div class="text-[13.5px] text-gray-800 leading-snug">不过也可能三分钟热度</div>
+                <div class="mt-1">
+                  <span class="px-1.5 py-0.5 text-[10.5px] font-medium rounded text-red-500 bg-red-50">
+                    [情绪化]
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 根记录 3 -->
+      <div class="py-2 px-2.5 rounded-lg hover:bg-gray-50 flex items-start group">
+        <span class="text-[11.5px] font-mono text-gray-400 mt-0.5 w-11 flex-shrink-0">11:15</span>
+        <div class="flex-1 text-[13.5px] text-gray-900 leading-snug">中午又觉得A也没那么差</div>
+      </div>
+
+      <!-- 根记录 4 -->
+      <div class="py-2 px-2.5 rounded-lg hover:bg-gray-50 flex items-start group">
+        <span class="text-[11.5px] font-mono text-gray-400 mt-0.5 w-11 flex-shrink-0">16:20</span>
+        <div class="flex-1 min-w-0 pr-1">
+          <div class="text-[13.5px] text-gray-900 leading-snug">下午抽空背了20个单词，感觉还行</div>
+          <div class="mt-1">
+            <span class="px-1.5 py-0.5 text-[10.5px] font-medium rounded text-emerald-500 bg-emerald-50 mr-1">
+              [认真规划]
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200/80 rounded-full">
+              <span>🔗</span>学日语
+            </span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 底部输入框 -->
+    <div class="border-t border-gray-100 bg-white px-3 pt-2 pb-4">
+      <div class="flex items-center gap-1.5 mb-2 overflow-x-auto no-scrollbar py-0.5">
+        <span class="text-[11px] text-gray-400 pl-1">最近:</span>
+        <span class="px-2.5 py-0.5 rounded-full text-xs bg-gray-50 text-gray-700 border border-gray-200">[学日语]</span>
+        <span class="px-2.5 py-0.5 rounded-full text-xs bg-gray-50 text-gray-700 border border-gray-200">[演唱会]</span>
+        <span class="px-2.5 py-0.5 rounded-full text-xs bg-gray-50 text-gray-700 border border-gray-200">[要不要辞职]</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <input type="text" placeholder="此刻在想什么..." class="flex-1 pl-3.5 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm" />
+        <button class="p-2 bg-gray-900 text-white rounded-xl"><i data-lucide="send" class="w-4 h-4"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    function switchStyle(style) {
+      const container = document.getElementById('tree-branch-container');
+      container.className = 'style-' + style;
+
+      document.getElementById('btn-curved').className = style === 'curved' ? 'px-3 py-1.5 rounded-lg bg-blue-600 font-medium transition-all' : 'px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-700 transition-all';
+      document.getElementById('btn-minimal').className = style === 'minimal' ? 'px-3 py-1.5 rounded-lg bg-blue-600 font-medium transition-all' : 'px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-700 transition-all';
+      document.getElementById('btn-card').className = style === 'card' ? 'px-3 py-1.5 rounded-lg bg-blue-600 font-medium transition-all' : 'px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-700 transition-all';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+// Record 数据模型
+export interface RecordItem {
+  id: string;
+  text: string;
+  created_at: string; // ISO 8601 string
+  parent_id: string | null; // 结构分支关系 (父记录 ID)
+  tag_id: string | null; // 事后手动打的标签 ID, 可选
+  thread_id: string | null; // 手动关联的思维线 ID, 可选
+}
+
+// Tag 标签数据模型
+export interface TagItem {
+  id: string;
+  name: string;
+  color: string; // hex color (例如 '#F87171')
+}
+
+// Thread 思维线数据模型
+export interface ThreadItem {
+  id: string;
+  title: string; // 例如 "演唱会", "学日语", "要不要辞职"
+  created_at: string; // ISO 8601 string
+  last_used_at: string; // 用于"最近使用"排序, 每次有新记录关联时更新
+}
+
+// 包含关联解析的展示记录
+export interface EnrichedRecordItem extends RecordItem {
+  thread?: ThreadItem;
+  tag?: TagItem;
+  children?: EnrichedRecordItem[];
+}
+
+// 视图切换类型
+export type ActiveTab = 'record' | 'review' | 'thread-detail' | 'widgets';
