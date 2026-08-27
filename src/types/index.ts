@@ -7,6 +7,7 @@ export interface RecordItem {
   tag_id: string | null; // 事后手动打的标签 ID, 可选
   thread_id: string | null; // 手动关联的思维线 ID, 可选
   quote_id?: string | null; // 引用的历史记录 ID, 可选
+  quote_color?: string | null; // 引用/分支源记录的专属色, 首次被引用时从色库随机分配
 }
 
 // Tag 标签数据模型

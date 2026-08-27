@@ -70,15 +70,38 @@ export const RecordInputBar: React.FC = () => {
 
       {/* 1.5 Quoting State Alert (if active) */}
       {quotedRecord && (
-        <div className="mb-2 px-2.5 py-1.5 bg-amber-50/95 border border-amber-300/80 rounded-lg flex items-center justify-between text-xs text-amber-900 shadow-xs animate-in fade-in duration-150">
+        <div
+          className="mb-2 px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs shadow-xs animate-in fade-in duration-150"
+          style={
+            quotedRecord.quote_color
+              ? {
+                  backgroundColor: `${quotedRecord.quote_color}18`,
+                  border: `1px solid ${quotedRecord.quote_color}80`,
+                  color: quotedRecord.quote_color,
+                }
+              : {
+                  backgroundColor: 'rgba(251,191,36,0.14)',
+                  border: '1px solid rgba(252,211,77,0.8)',
+                  color: '#78350f',
+                }
+          }
+        >
           <div className="flex items-center gap-1.5 truncate pr-2">
-            <Quote className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-            <span className="text-[11px] font-semibold text-amber-800">引用:</span>
-            <span className="truncate text-amber-900 font-normal">"{quotedRecord.text}"</span>
+            <Quote
+              className="w-3.5 h-3.5 flex-shrink-0"
+              style={{ color: quotedRecord.quote_color ?? '#d97706' }}
+            />
+            <span
+              className="text-[11px] font-semibold"
+              style={{ color: quotedRecord.quote_color ?? '#92400e' }}
+            >
+              引用:
+            </span>
+            <span className="truncate font-normal">{quotedRecord.text}</span>
           </div>
           <button
             onClick={() => setActiveQuoteRecordId(null)}
-            className="text-amber-700 hover:text-amber-900 p-0.5 rounded hover:bg-amber-200/50 transition-colors"
+            className="p-0.5 rounded hover:bg-black/5 transition-colors"
             title="取消引用"
           >
             <X className="w-3.5 h-3.5" />

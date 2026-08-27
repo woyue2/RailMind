@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { RecordItem, TagItem, ThreadItem, EnrichedRecordItem, HomeLink } from '../types';
 import { generateId } from '../utils/dateUtils';
+import { pickRandomQuoteColor } from '../utils/quoteColors';
 import { createR2SyncService } from '../sync';
 import { loadR2Settings } from '../sync/credentials';
 
@@ -293,12 +294,30 @@ export const useFlowStore = create<FlowState>()(
         const nowIso = new Date().toISOString();
         const threadId = options.thread_id || null;
         const quoteId = options.quote_id || null;
+        const parentId = options.parent_id || null;
+
+        // 为"被引用/被分支"的源记录分配引用色(同源同色):
+        // - 引用: 恒分配(首次随机, 之后复用)
+        // - 分支: 仅跨天时分配(同天保持琥珀树形, 不额外上色)
+        let targetColorUpdate: RecordItem | null = null;
+        const targetId = quoteId || parentId;
+        if (targetId) {
+          const target = get().records.find((r) => r.id === targetId);
+          if (target) {
+            const isCrossDayBranch =
+              !!parentId && !quoteId && target.created_at.split('T')[0] !== nowIso.split('T')[0];
+            const needColor = !!quoteId || isCrossDayBranch;
+            if (needColor && !target.quote_color) {
+              targetColorUpdate = { ...target, quote_color: pickRandomQuoteColor() };
+            }
+          }
+        }
 
         const newRecord: RecordItem = {
           id: generateId(),
           text: text.trim(),
           created_at: nowIso,
-          parent_id: options.parent_id || null,
+          parent_id: parentId,
           tag_id: options.tag_id || null,
           thread_id: threadId,
           quote_id: quoteId,
@@ -312,8 +331,12 @@ export const useFlowStore = create<FlowState>()(
             );
           }
 
+          const records = targetColorUpdate
+            ? state.records.map((r) => (r.id === targetColorUpdate!.id ? targetColorUpdate! : r))
+            : state.records;
+
           return {
-            records: [...state.records, newRecord],
+            records: [...records, newRecord],
             threads: updatedThreads,
             activeBranchParentId: null,
             activeQuoteRecordId: null,
@@ -322,6 +345,9 @@ export const useFlowStore = create<FlowState>()(
         });
 
         triggerAutoSync((sync) => sync?.pushRecord(newRecord));
+        if (targetColorUpdate) {
+          triggerAutoSync((sync) => sync?.pushRecord(targetColorUpdate!));
+        }
 
         return newRecord;
       },

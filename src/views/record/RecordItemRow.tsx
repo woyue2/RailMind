@@ -69,6 +69,14 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Upstream quoted record
   const quotedRecord = item.quote_id ? records.find((r) => r.id === item.quote_id) : null;
+  // 跨日分支的子记录: level===0 说明父不在同一天树中, 分支关系已退化为引用
+  const parentRecord = item.parent_id ? records.find((r) => r.id === item.parent_id) : null;
+  const isCrossDayBranchChild = level === 0 && !!item.parent_id;
+  const showUpstreamCard = !!item.quote_id || isCrossDayBranchChild;
+  const upstreamRecord = item.quote_id ? quotedRecord : parentRecord;
+  // 源记录引用色(同源同色, 无则回退琥珀)
+  const upstreamColor =
+    (item.quote_id ? quotedRecord?.quote_color : parentRecord?.quote_color) || item.quote_color || null;
 
   // Downstream records that quote this record
   const downstreamQuotes = records.filter((r) => r.quote_id === item.id);
@@ -198,6 +206,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               ? 'bg-blue-50/40 ring-1 ring-blue-200 shadow-2xs'
               : 'hover:bg-gray-50/90'
           }`}
+          style={item.quote_color ? { boxShadow: `inset 3px 0 0 0 ${item.quote_color}` } : undefined}
         >
           {/* Timestamp: 灰色小号时间戳 */}
           <span className="text-[11.5px] font-mono text-gray-400 mt-0.5 mr-2 flex-shrink-0 w-10 select-none">
@@ -206,27 +215,38 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
           {/* Main Content Area */}
           <div className="flex-1 min-w-0 pr-1">
-            {/* Upstream Quoted Note Card */}
-            {item.quote_id && (
+            {/* Upstream Quoted Note Card (引用 或 跨日分支退化) */}
+            {showUpstreamCard && (
               <div className="mb-1.5">
-                {quotedRecord ? (
+                {upstreamRecord ? (
                   <button
                     type="button"
-                    onClick={() => handleJumpToRecord(quotedRecord)}
-                    className="group/quote text-left w-full flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-50/80 hover:bg-amber-100/90 border border-amber-200/80 hover:border-amber-300 transition-all text-xs text-amber-900 shadow-2xs cursor-pointer"
-                    title="点击跳转到引用的原记录"
+                    onClick={() => handleJumpToRecord(upstreamRecord)}
+                    className="group/quote text-left w-full flex items-center gap-1.5 px-2 py-1 rounded-md border transition-all text-xs shadow-2xs cursor-pointer"
+                    style={{
+                      backgroundColor: upstreamColor ? `${upstreamColor}1f` : 'rgba(251,191,36,0.08)',
+                      borderColor: upstreamColor ? `${upstreamColor}cc` : 'rgba(252,211,77,0.8)',
+                      color: upstreamColor ?? '#78350f',
+                    }}
+                    title={item.quote_id ? '点击跳转到引用的原记录' : '点击跳转到跨日分支的父记录'}
                   >
-                    <Quote className="w-3 h-3 text-amber-600 flex-shrink-0 group-hover/quote:scale-110 transition-transform" />
-                    <span className="text-[10px] text-amber-700 font-medium flex-shrink-0">
-                      {formatShortDateTime(quotedRecord.created_at)}
+                    <Quote
+                      className="w-3 h-3 flex-shrink-0 group-hover/quote:scale-110 transition-transform"
+                      style={{ color: upstreamColor ?? '#d97706' }}
+                    />
+                    <span
+                      className="text-[10px] font-medium flex-shrink-0"
+                      style={{ color: upstreamColor ? `${upstreamColor}cc` : '#b45309' }}
+                    >
+                      {formatShortDateTime(upstreamRecord.created_at)}
                     </span>
-                    <span className="text-[11px] text-amber-900 truncate font-normal">
-                      {quotedRecord.text}
+                    <span className="text-[11px] truncate font-normal">
+                      {upstreamRecord.text}
                     </span>
                   </button>
                 ) : (
                   <div className="text-[10.5px] text-gray-400 italic px-2 py-0.5 rounded bg-gray-50 border border-dashed border-gray-200">
-                    [引用的原记录已移除]
+                    [原记录已移除]
                   </div>
                 )}
               </div>
@@ -318,14 +338,30 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                         setShowDownstreamPopover((prev) => !prev);
                       }
                     }}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-medium text-amber-800 bg-amber-50/90 hover:bg-amber-100/90 border border-amber-200/80 rounded-full transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-medium rounded-full transition-colors cursor-pointer"
+                    style={
+                      item.quote_color
+                        ? {
+                            color: item.quote_color,
+                            backgroundColor: `${item.quote_color}15`,
+                            border: `1px solid ${item.quote_color}80`,
+                          }
+                        : {
+                            color: '#92400e',
+                            backgroundColor: 'rgba(251,191,36,0.12)',
+                            border: '1px solid rgba(252,211,77,0.8)',
+                          }
+                    }
                     title={
                       downstreamQuotes.length === 1
                         ? `点击跳转到引用它的记录: "${downstreamQuotes[0].text}"`
                         : '点击查看所有引用它的后续记录'
                     }
                   >
-                    <Quote className="w-2.5 h-2.5 text-amber-600 rotate-180" />
+                    <Quote
+                      className="w-2.5 h-2.5 rotate-180"
+                      style={{ color: item.quote_color ?? '#d97706' }}
+                    />
                     <span>{downstreamQuotes.length}条后续引用</span>
                     {downstreamQuotes.length > 1 && <span className="text-[9px]">▾</span>}
                   </button>

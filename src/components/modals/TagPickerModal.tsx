@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Tag, Plus, X, Check } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
+import { QUOTE_COLOR_PALETTE as PRESET_COLORS } from '../../utils/quoteColors';
 
 interface TagPickerModalProps {
   isOpen: boolean;
@@ -8,17 +9,6 @@ interface TagPickerModalProps {
   currentTagId: string | null;
   onSelectTag: (tagId: string | null) => void;
 }
-
-const PRESET_COLORS = [
-  '#F87171', // Red
-  '#FB923C', // Orange
-  '#FBBF24', // Amber
-  '#34D399', // Emerald
-  '#60A5FA', // Blue
-  '#818CF8', // Indigo
-  '#A78BFA', // Purple
-  '#9CA3AF', // Gray
-];
 
 export const TagPickerModal = ({
   isOpen,
