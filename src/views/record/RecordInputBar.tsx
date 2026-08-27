@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, X, GitBranch, Sparkles } from 'lucide-react';
+import { Send, X, GitBranch, Sparkles, Quote } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 
 export const RecordInputBar: React.FC = () => {
@@ -9,6 +9,8 @@ export const RecordInputBar: React.FC = () => {
   const getRecentThreads = useFlowStore((s) => s.getRecentThreads);
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
   const setActiveBranchParentId = useFlowStore((s) => s.setActiveBranchParentId);
+  const activeQuoteRecordId = useFlowStore((s) => s.activeQuoteRecordId);
+  const setActiveQuoteRecordId = useFlowStore((s) => s.setActiveQuoteRecordId);
   const quickSelectedThreadId = useFlowStore((s) => s.quickSelectedThreadId);
   const setQuickSelectedThreadId = useFlowStore((s) => s.setQuickSelectedThreadId);
   const addRecord = useFlowStore((s) => s.addRecord);
@@ -21,12 +23,17 @@ export const RecordInputBar: React.FC = () => {
     ? records.find((r) => r.id === activeBranchParentId)
     : null;
 
-  // Auto focus input when branching mode turns on
+  // Quoted record info if in quote mode
+  const quotedRecord = activeQuoteRecordId
+    ? records.find((r) => r.id === activeQuoteRecordId)
+    : null;
+
+  // Auto focus input when branching mode or quote mode turns on
   useEffect(() => {
-    if (activeBranchParentId && inputRef.current) {
+    if ((activeBranchParentId || activeQuoteRecordId) && inputRef.current) {
       inputRef.current.focus();
     }
-  }, [activeBranchParentId]);
+  }, [activeBranchParentId, activeQuoteRecordId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +42,7 @@ export const RecordInputBar: React.FC = () => {
     addRecord(inputText, {
       parent_id: activeBranchParentId,
       thread_id: quickSelectedThreadId,
+      quote_id: activeQuoteRecordId,
     });
 
     setInputText('');
@@ -54,6 +62,24 @@ export const RecordInputBar: React.FC = () => {
             onClick={() => setActiveBranchParentId(null)}
             className="text-amber-700 hover:text-amber-900 p-0.5"
             title="取消分支模式"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* 1.5 Quoting State Alert (if active) */}
+      {quotedRecord && (
+        <div className="mb-2 px-2.5 py-1.5 bg-amber-50/95 border border-amber-300/80 rounded-lg flex items-center justify-between text-xs text-amber-900 shadow-xs animate-in fade-in duration-150">
+          <div className="flex items-center gap-1.5 truncate pr-2">
+            <Quote className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+            <span className="text-[11px] font-semibold text-amber-800">引用:</span>
+            <span className="truncate text-amber-900 font-normal">"{quotedRecord.text}"</span>
+          </div>
+          <button
+            onClick={() => setActiveQuoteRecordId(null)}
+            className="text-amber-700 hover:text-amber-900 p-0.5 rounded hover:bg-amber-200/50 transition-colors"
+            title="取消引用"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -97,6 +123,8 @@ export const RecordInputBar: React.FC = () => {
             placeholder={
               activeBranchParentId
                 ? '输入分支子想法...'
+                : activeQuoteRecordId
+                ? '输入回应或引用想法...'
                 : quickSelectedThreadId
                 ? '此刻在想什么 (将关联选中思维线)...'
                 : '此刻在想什么...'

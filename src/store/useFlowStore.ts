@@ -34,11 +34,21 @@ interface FlowState {
 
   // Interaction state
   activeBranchParentId: string | null; // 正在分支的父记录 ID
+  activeQuoteRecordId: string | null; // 正在引用的历史记录 ID
   quickSelectedThreadId: string | null; // 底部快捷胶囊选中的思维线 ID
+  highlightRecordId: string | null; // 触发聚光灯呼吸高亮的记录 ID
 
   // Actions for Records
-  addRecord: (text: string, options?: { parent_id?: string | null; tag_id?: string | null; thread_id?: string | null }) => RecordItem;
-  updateRecord: (id: string, updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text'>>) => void;
+  addRecord: (
+    text: string,
+    options?: {
+      parent_id?: string | null;
+      tag_id?: string | null;
+      thread_id?: string | null;
+      quote_id?: string | null;
+    }
+  ) => RecordItem;
+  updateRecord: (id: string, updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id'>>) => void;
   deleteRecord: (id: string) => void;
 
   // Actions for Threads
@@ -61,6 +71,8 @@ interface FlowState {
   backToThreadDetail: () => void;
   resetToTodayRecord: () => void;
   setActiveBranchParentId: (id: string | null) => void;
+  setActiveQuoteRecordId: (id: string | null) => void;
+  setHighlightRecordId: (id: string | null) => void;
   setQuickSelectedThreadId: (id: string | null) => void;
   setSelectedDate: (date: string | null) => void;
   setHomeLink: (link: { shownName: string; href: string } | null) => void;
@@ -273,11 +285,14 @@ export const useFlowStore = create<FlowState>()(
       fromReviewDate: false,
       fromThreadDetailId: null,
       activeBranchParentId: null,
+      activeQuoteRecordId: null,
       quickSelectedThreadId: null,
+      highlightRecordId: null,
 
       addRecord: (text, options = {}) => {
         const nowIso = new Date().toISOString();
         const threadId = options.thread_id || null;
+        const quoteId = options.quote_id || null;
 
         const newRecord: RecordItem = {
           id: generateId(),
@@ -286,6 +301,7 @@ export const useFlowStore = create<FlowState>()(
           parent_id: options.parent_id || null,
           tag_id: options.tag_id || null,
           thread_id: threadId,
+          quote_id: quoteId,
         };
 
         set((state) => {
@@ -300,6 +316,7 @@ export const useFlowStore = create<FlowState>()(
             records: [...state.records, newRecord],
             threads: updatedThreads,
             activeBranchParentId: null,
+            activeQuoteRecordId: null,
             quickSelectedThreadId: null,
           };
         });
@@ -500,6 +517,10 @@ export const useFlowStore = create<FlowState>()(
       },
 
       setActiveBranchParentId: (id) => set({ activeBranchParentId: id }),
+
+      setActiveQuoteRecordId: (id) => set({ activeQuoteRecordId: id }),
+
+      setHighlightRecordId: (id) => set({ highlightRecordId: id }),
 
       setQuickSelectedThreadId: (id) =>
         set((state) => ({

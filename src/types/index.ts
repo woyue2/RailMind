@@ -6,6 +6,7 @@ export interface RecordItem {
   parent_id: string | null; // 结构分支关系 (父记录 ID)
   tag_id: string | null; // 事后手动打的标签 ID, 可选
   thread_id: string | null; // 手动关联的思维线 ID, 可选
+  quote_id?: string | null; // 引用的历史记录 ID, 可选
 }
 
 // Tag 标签数据模型

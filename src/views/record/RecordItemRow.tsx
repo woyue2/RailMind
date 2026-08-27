@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GitBranch, Link2, X, Pencil, Check } from 'lucide-react';
-import { EnrichedRecordItem } from '../../types';
-import { formatTime } from '../../utils/dateUtils';
+import { GitBranch, Link2, X, Pencil, Check, Quote } from 'lucide-react';
+import { EnrichedRecordItem, RecordItem } from '../../types';
+import { formatTime, formatShortDateTime } from '../../utils/dateUtils';
 import { useFlowStore } from '../../store/useFlowStore';
 import { ConfirmDeleteModal } from '../../components/modals/ConfirmDeleteModal';
 
@@ -22,12 +22,18 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 }) => {
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
   const setActiveBranchParentId = useFlowStore((s) => s.setActiveBranchParentId);
+  const activeQuoteRecordId = useFlowStore((s) => s.activeQuoteRecordId);
+  const setActiveQuoteRecordId = useFlowStore((s) => s.setActiveQuoteRecordId);
+  const highlightRecordId = useFlowStore((s) => s.highlightRecordId);
+  const setHighlightRecordId = useFlowStore((s) => s.setHighlightRecordId);
+  const openDateRecord = useFlowStore((s) => s.openDateRecord);
   const openThreadDetail = useFlowStore((s) => s.openThreadDetail);
   const deleteRecord = useFlowStore((s) => s.deleteRecord);
   const updateRecord = useFlowStore((s) => s.updateRecord);
   const quickSelectedThreadId = useFlowStore((s) => s.quickSelectedThreadId);
   const setQuickSelectedThreadId = useFlowStore((s) => s.setQuickSelectedThreadId);
   const threads = useFlowStore((s) => s.threads);
+  const records = useFlowStore((s) => s.records);
 
   // In-place text editing state
   const [isEditing, setIsEditing] = useState(false);
@@ -36,6 +42,9 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Delete confirm modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+
+  // Popover state for multiple downstream references
+  const [showDownstreamPopover, setShowDownstreamPopover] = useState(false);
 
   // Keep editText in sync when item.text changes externally
   useEffect(() => {
@@ -51,16 +60,58 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   }, [isEditing]);
 
   const isBranchingThis = activeBranchParentId === item.id;
+  const isQuotingThis = activeQuoteRecordId === item.id;
+  const isHighlighted = highlightRecordId === item.id;
   const hasChildren = item.children && item.children.length > 0;
   const activeQuickThread = quickSelectedThreadId
     ? threads.find((t) => t.id === quickSelectedThreadId)
     : null;
+
+  // Upstream quoted record
+  const quotedRecord = item.quote_id ? records.find((r) => r.id === item.quote_id) : null;
+
+  // Downstream records that quote this record
+  const downstreamQuotes = records.filter((r) => r.quote_id === item.id);
+
+  // Bidirectional Jump handler
+  const handleJumpToRecord = (targetRecord: RecordItem) => {
+    const elementId = `record-${targetRecord.id}`;
+    const el = document.getElementById(elementId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightRecordId(targetRecord.id);
+      setTimeout(() => {
+        setHighlightRecordId(null);
+      }, 1600);
+    } else {
+      const targetDate = targetRecord.created_at.split('T')[0];
+      openDateRecord(targetDate);
+      setHighlightRecordId(targetRecord.id);
+      setTimeout(() => {
+        const targetEl = document.getElementById(elementId);
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        setTimeout(() => {
+          setHighlightRecordId(null);
+        }, 1600);
+      }, 250);
+    }
+  };
 
   const handleBranchClick = () => {
     if (isBranchingThis) {
       setActiveBranchParentId(null);
     } else {
       setActiveBranchParentId(item.id);
+    }
+  };
+
+  const handleQuoteClick = () => {
+    if (isQuotingThis) {
+      setActiveQuoteRecordId(null);
+    } else {
+      setActiveQuoteRecordId(item.id);
     }
   };
 
@@ -101,7 +152,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" id={`record-${item.id}`}>
       {/*
         Node Row Container:
         - 每一层子分支由左侧父容器的虚线导轨引导 (border-l)
@@ -136,9 +187,13 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
         {/* Row Content Card - scoped with 'group' so hover only triggers this row's actions */}
         <div
-          className={`relative group flex items-start py-2 px-2.5 rounded-lg transition-all ${
-            isBranchingThis
+          className={`relative group flex items-start py-2 px-2.5 rounded-lg transition-all duration-200 ${
+            isHighlighted
+              ? 'ring-2 ring-amber-400 bg-amber-50/90 shadow-md'
+              : isBranchingThis
               ? 'bg-amber-50/90 ring-1 ring-amber-300 shadow-2xs'
+              : isQuotingThis
+              ? 'bg-amber-50/60 ring-1 ring-amber-300/80 shadow-2xs'
               : isEditing
               ? 'bg-blue-50/40 ring-1 ring-blue-200 shadow-2xs'
               : 'hover:bg-gray-50/90'
@@ -151,6 +206,32 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
           {/* Main Content Area */}
           <div className="flex-1 min-w-0 pr-1">
+            {/* Upstream Quoted Note Card */}
+            {item.quote_id && (
+              <div className="mb-1.5">
+                {quotedRecord ? (
+                  <button
+                    type="button"
+                    onClick={() => handleJumpToRecord(quotedRecord)}
+                    className="group/quote text-left w-full flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-50/80 hover:bg-amber-100/90 border border-amber-200/80 hover:border-amber-300 transition-all text-xs text-amber-900 shadow-2xs cursor-pointer"
+                    title="点击跳转到引用的原记录"
+                  >
+                    <Quote className="w-3 h-3 text-amber-600 flex-shrink-0 group-hover/quote:scale-110 transition-transform" />
+                    <span className="text-[10px] text-amber-700 font-medium flex-shrink-0">
+                      {formatShortDateTime(quotedRecord.created_at)}
+                    </span>
+                    <span className="text-[11px] text-amber-900 truncate font-normal">
+                      {quotedRecord.text}
+                    </span>
+                  </button>
+                ) : (
+                  <div className="text-[10.5px] text-gray-400 italic px-2 py-0.5 rounded bg-gray-50 border border-dashed border-gray-200">
+                    [引用的原记录已移除]
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Record text or inline editing input */}
             {isEditing ? (
               <div className="flex items-center gap-1.5 w-full">
@@ -188,13 +269,13 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               </div>
             )}
 
-            {/* Associated Thread Capsule 🔗 & Tag Badge [标签] */}
+            {/* Associated Thread Capsule 🔗 & Tag Badge [标签] & Downstream Quotes Badge */}
             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
               {/* 🔗 Linked Thread Capsule */}
               {item.thread && (
                 <button
                   onClick={() => openThreadDetail(item.thread!.id)}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 bg-blue-50/90 hover:bg-blue-100 border border-blue-200/80 rounded-full transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 bg-blue-50/90 hover:bg-blue-100 border border-blue-200/80 rounded-full transition-colors cursor-pointer"
                   title="点击跳转到该思维线详情页"
                 >
                   <span className="text-[10px]">🔗</span>
@@ -206,7 +287,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               {item.tag ? (
                 <button
                   onClick={() => onOpenTagPicker(item.id, item.tag_id)}
-                  className="inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded hover:opacity-80 transition-opacity"
+                  className="inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded hover:opacity-80 transition-opacity cursor-pointer"
                   style={{
                     color: item.tag.color,
                     backgroundColor: `${item.tag.color}15`,
@@ -218,19 +299,79 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               ) : (
                 <button
                   onClick={() => onOpenTagPicker(item.id, null)}
-                  className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded border border-dashed border-gray-200 hover:border-gray-400 transition-all"
+                  className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded border border-dashed border-gray-200 hover:border-gray-400 transition-all cursor-pointer"
                   title="补打标签"
                 >
                   +打标签
                 </button>
               )}
+
+              {/* 💬 Downstream References Badge */}
+              {downstreamQuotes.length > 0 && (
+                <div className="relative inline-block">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (downstreamQuotes.length === 1) {
+                        handleJumpToRecord(downstreamQuotes[0]);
+                      } else {
+                        setShowDownstreamPopover((prev) => !prev);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-medium text-amber-800 bg-amber-50/90 hover:bg-amber-100/90 border border-amber-200/80 rounded-full transition-colors cursor-pointer"
+                    title={
+                      downstreamQuotes.length === 1
+                        ? `点击跳转到引用它的记录: "${downstreamQuotes[0].text}"`
+                        : '点击查看所有引用它的后续记录'
+                    }
+                  >
+                    <Quote className="w-2.5 h-2.5 text-amber-600 rotate-180" />
+                    <span>{downstreamQuotes.length}条后续引用</span>
+                    {downstreamQuotes.length > 1 && <span className="text-[9px]">▾</span>}
+                  </button>
+
+                  {/* Popover if multiple downstream references */}
+                  {showDownstreamPopover && downstreamQuotes.length > 1 && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-20"
+                        onClick={() => setShowDownstreamPopover(false)}
+                      />
+                      <div className="absolute left-0 bottom-full mb-1.5 z-30 w-56 bg-white rounded-lg shadow-lg border border-amber-200/90 p-1.5 text-xs animate-in fade-in zoom-in-95 duration-150">
+                        <div className="text-[10px] text-amber-800/80 font-semibold px-1.5 py-0.5 border-b border-amber-100 mb-1">
+                          后续引用记录 ({downstreamQuotes.length})
+                        </div>
+                        <div className="max-h-36 overflow-y-auto space-y-1">
+                          {downstreamQuotes.map((q) => (
+                            <button
+                              key={q.id}
+                              type="button"
+                              onClick={() => {
+                                setShowDownstreamPopover(false);
+                                handleJumpToRecord(q);
+                              }}
+                              className="w-full text-left p-1.5 rounded hover:bg-amber-50 text-gray-800 hover:text-amber-900 transition-colors flex flex-col gap-0.5 cursor-pointer"
+                            >
+                              <span className="text-[10px] text-gray-400">
+                                {formatShortDateTime(q.created_at)}
+                              </span>
+                              <span className="truncate text-[11.5px] font-normal">{q.text}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Action Buttons: ✎ (Edit), ⎇ (Branch), ⚭ (Link Thread), ✕ (Delete) */}
-          <div className="flex items-center gap-0.5 flex-shrink-0 pt-0.5">
-            {/* ✎ In-place Edit Button */}
-            {!isEditing && (
+          {/* Action Buttons: ✎ (Edit), ⎇ (Branch), 💬 (Quote), ⚭ (Link Thread), ✕ (Delete) */}
+          {/* 当处于编辑模式(isEditing)时隐藏普通操作按钮，避免打勾保存/取消与分支按钮挤压与点击冲突 */}
+          {!isEditing && (
+            <div className="flex items-center gap-0.5 flex-shrink-0 pt-0.5">
+              {/* ✎ In-place Edit Button */}
               <button
                 onClick={() => setIsEditing(true)}
                 className="p-1.5 text-gray-400 hover:text-gray-800 hover:bg-gray-100 rounded transition-all opacity-0 group-hover:opacity-100"
@@ -238,47 +379,60 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>
-            )}
 
-            {/* ⎇ Branch Button */}
-            <button
-              onClick={handleBranchClick}
-              className={`p-1.5 rounded transition-all flex items-center justify-center ${
-                isBranchingThis
-                  ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400 font-bold'
-                  : 'text-gray-400 hover:text-gray-800 hover:bg-gray-100 opacity-60 group-hover:opacity-100'
-              }`}
-              title={isBranchingThis ? '取消分支' : '新建分支子记录 (⎇)'}
-            >
-              <GitBranch className="w-3.5 h-3.5" />
-            </button>
+              {/* ⎇ Branch Button */}
+              <button
+                onClick={handleBranchClick}
+                className={`p-1.5 rounded transition-all flex items-center justify-center ${
+                  isBranchingThis
+                    ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400 font-bold'
+                    : 'text-gray-400 hover:text-gray-800 hover:bg-gray-100 opacity-60 group-hover:opacity-100'
+                }`}
+                title={isBranchingThis ? '取消分支' : '新建分支子记录 (⎇)'}
+              >
+                <GitBranch className="w-3.5 h-3.5" />
+              </button>
 
-            {/* ⚭ Link Thread Button (Enhanced with quick direct linkage) */}
-            <button
-              onClick={handleThreadLinkClick}
-              className={`p-1.5 rounded transition-all ${
-                activeQuickThread
-                  ? 'text-blue-600 bg-blue-50 ring-1 ring-blue-300 font-medium opacity-100'
-                  : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50 opacity-60 group-hover:opacity-100'
-              }`}
-              title={
-                activeQuickThread
-                  ? `点击直接关联至选中的「${activeQuickThread.title}」`
-                  : '关联到思维线 (⚭)'
-              }
-            >
-              <Link2 className="w-3.5 h-3.5" />
-            </button>
+              {/* 💬 Quote Button */}
+              <button
+                onClick={handleQuoteClick}
+                className={`p-1.5 rounded transition-all flex items-center justify-center ${
+                  isQuotingThis
+                    ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400 font-bold opacity-100'
+                    : 'text-gray-400 hover:text-amber-700 hover:bg-amber-50 opacity-60 group-hover:opacity-100'
+                }`}
+                title={isQuotingThis ? '取消引用' : '引用此记录 (💬)'}
+              >
+                <Quote className="w-3.5 h-3.5" />
+              </button>
 
-            {/* Delete button (Pops up confirmation modal) */}
-            <button
-              onClick={() => setDeleteModalOpen(true)}
-              className="p-1.5 text-gray-300 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-              title="删除记录"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
+              {/* ⚭ Link Thread Button (Enhanced with quick direct linkage) */}
+              <button
+                onClick={handleThreadLinkClick}
+                className={`p-1.5 rounded transition-all ${
+                  activeQuickThread
+                    ? 'text-blue-600 bg-blue-50 ring-1 ring-blue-300 font-medium opacity-100'
+                    : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50 opacity-60 group-hover:opacity-100'
+                }`}
+                title={
+                  activeQuickThread
+                    ? `点击直接关联至选中的「${activeQuickThread.title}」`
+                    : '关联到思维线 (⚭)'
+                }
+              >
+                <Link2 className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Delete button (Pops up confirmation modal) */}
+              <button
+                onClick={() => setDeleteModalOpen(true)}
+                className="p-1.5 text-gray-300 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                title="删除记录"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
