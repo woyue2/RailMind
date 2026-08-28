@@ -1,10 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, X, GitBranch, Sparkles, Quote } from 'lucide-react';
+import { Send, X, GitBranch, Sparkles, Quote, Camera, Plus, Loader2 } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
+import { processImageFiles, MAX_NOTE_IMAGES } from '../../utils/imageUtils';
 
 export const RecordInputBar: React.FC = () => {
   const [inputText, setInputText] = useState('');
+  const [pendingImgs, setPendingImgs] = useState<string[]>([]);
+  const [isProcessingImg, setIsProcessingImg] = useState(false);
+  const [imgErrorTip, setImgErrorTip] = useState<string | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getRecentThreads = useFlowStore((s) => s.getRecentThreads);
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
@@ -35,18 +41,53 @@ export const RecordInputBar: React.FC = () => {
     }
   }, [activeBranchParentId, activeQuoteRecordId]);
 
+  // Handle image file selection
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsProcessingImg(true);
+    setImgErrorTip(null);
+    try {
+      const { compressed, error } = await processImageFiles(files, pendingImgs.length);
+      if (compressed.length > 0) {
+        setPendingImgs((prev) => [...prev, ...compressed].slice(0, MAX_NOTE_IMAGES));
+      }
+      if (error) {
+        setImgErrorTip(error);
+        setTimeout(() => setImgErrorTip(null), 2500);
+      }
+    } catch (err) {
+      console.error('Failed to process image:', err);
+    } finally {
+      setIsProcessingImg(false);
+      // Reset input value so same files can be re-selected if desired
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemovePendingImg = (index: number) => {
+    setPendingImgs((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    const hasText = !!inputText.trim();
+    const hasImgs = pendingImgs.length > 0;
+    if (!hasText && !hasImgs) return;
 
     addRecord(inputText, {
       parent_id: activeBranchParentId,
       thread_id: quickSelectedThreadId,
       quote_id: activeQuoteRecordId,
+      imgs: hasImgs ? pendingImgs : undefined,
     });
 
     setInputText('');
+    setPendingImgs([]);
   };
+
+  const canSubmit = (!!inputText.trim() || pendingImgs.length > 0) && !isProcessingImg;
 
   return (
     <div className="record-input-bar border-t border-gray-100 bg-white/95 backdrop-blur-md px-3 pt-2 pb-3">
@@ -135,8 +176,90 @@ export const RecordInputBar: React.FC = () => {
         </div>
       )}
 
-      {/* 3. Bottom Sticky Single Line Input + Send Button */}
+      {/* 2.5 待发送图片预览条 (Pending Images Preview Strip) */}
+      {pendingImgs.length > 0 && (
+        <div className="flex items-center gap-2 mb-2 overflow-x-auto no-scrollbar py-1 animate-in fade-in slide-in-from-bottom-1 duration-150">
+          {pendingImgs.map((imgSrc, idx) => (
+            <div
+              key={idx}
+              className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200 shadow-xs group"
+            >
+              <img src={imgSrc} alt={`待发送图片 ${idx + 1}`} className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={() => handleRemovePendingImg(idx)}
+                className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 hover:bg-black text-white rounded-full flex items-center justify-center transition-colors shadow-sm"
+                title="移除图片"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          ))}
+
+          {/* 未达到上限时展示「+ 追加」按钮 */}
+          {pendingImgs.length < MAX_NOTE_IMAGES && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isProcessingImg}
+              className="w-14 h-14 rounded-lg border border-dashed border-gray-300 hover:border-gray-400 bg-gray-50 flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:text-gray-600 flex-shrink-0 transition-colors"
+              title={`添加照片 (${pendingImgs.length}/${MAX_NOTE_IMAGES})`}
+            >
+              {isProcessingImg ? (
+                <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" />
+                  <span className="text-[10px] scale-90">{pendingImgs.length}/{MAX_NOTE_IMAGES}</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 提示消息 */}
+      {imgErrorTip && (
+        <div className="text-[11px] text-amber-600 mb-1.5 px-1 animate-in fade-in">
+          {imgErrorTip}
+        </div>
+      )}
+
+      {/* 隐藏的 File Input 用于触发系统相机或相册选择 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {/* 3. Bottom Sticky Single Line Input + Option A Camera Button + Send Button */}
       <form onSubmit={handleSubmit} className="flex items-center gap-2">
+        {/* Option A: 相机/相册图标按钮置于输入框最左侧 */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isProcessingImg || pendingImgs.length >= MAX_NOTE_IMAGES}
+          className={`p-2.5 rounded-xl transition-all flex items-center justify-center border flex-shrink-0 ${
+            pendingImgs.length > 0
+              ? 'bg-blue-50 text-blue-600 border-blue-200'
+              : 'bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-gray-800 border-gray-200/90'
+          } ${pendingImgs.length >= MAX_NOTE_IMAGES ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`}
+          title={
+            pendingImgs.length >= MAX_NOTE_IMAGES
+              ? '最多上传 4 张照片'
+              : '添加照片/随手拍'
+          }
+        >
+          {isProcessingImg ? (
+            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          ) : (
+            <Camera className="w-4 h-4" />
+          )}
+        </button>
+
         <div className="relative flex-1">
           <input
             ref={inputRef}
@@ -150,6 +273,8 @@ export const RecordInputBar: React.FC = () => {
                 ? '输入回应或引用想法...'
                 : quickSelectedThreadId
                 ? '此刻在想什么 (将关联选中思维线)...'
+                : pendingImgs.length > 0
+                ? '输入想法说明 (可选)...'
                 : '此刻在想什么...'
             }
             className="w-full pl-3.5 pr-8 py-2.5 bg-gray-50 border border-gray-200/90 rounded-xl text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:bg-white focus:border-gray-800 transition-colors"
@@ -167,9 +292,9 @@ export const RecordInputBar: React.FC = () => {
 
         <button
           type="submit"
-          disabled={!inputText.trim()}
-          className={`p-2.5 rounded-xl transition-all flex items-center justify-center ${
-            inputText.trim()
+          disabled={!canSubmit}
+          className={`p-2.5 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${
+            canSubmit
               ? 'bg-gray-900 text-white hover:bg-black active:scale-95 shadow-sm'
               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
           }`}
@@ -181,3 +306,4 @@ export const RecordInputBar: React.FC = () => {
     </div>
   );
 };
+

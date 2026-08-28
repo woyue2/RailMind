@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Sparkles, ExternalLink } from 'lucide-react';
 import { useFlowStore } from '../store/useFlowStore';
 import { formatSimpleDate, formatTime, calculateDaysBetween } from '../utils/dateUtils';
 import { parseISO, differenceInDays, format } from 'date-fns';
+import { ImageViewerModal } from '../components/modals/ImageViewerModal';
 
 export const ThreadDetailView: React.FC = () => {
   const selectedThreadId = useFlowStore((s) => s.selectedThreadId);
@@ -10,6 +11,16 @@ export const ThreadDetailView: React.FC = () => {
   const getThreadRecords = useFlowStore((s) => s.getThreadRecords);
   const setActiveTab = useFlowStore((s) => s.setActiveTab);
   const openDateRecordFromThread = useFlowStore((s) => s.openDateRecordFromThread);
+
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerImages, setViewerImages] = useState<string[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
+  const handleOpenViewer = (images: string[], index: number) => {
+    setViewerImages(images);
+    setViewerIndex(index);
+    setViewerOpen(true);
+  };
 
   const thread = threads.find((t) => t.id === selectedThreadId);
   const records = useMemo(() => {
@@ -128,7 +139,40 @@ export const ThreadDetailView: React.FC = () => {
 
                       {/* Original Record Text Card */}
                       <div className="text-sm text-gray-800 leading-relaxed break-words bg-gray-50/70 p-3 rounded-xl border border-gray-100 group-hover:bg-blue-50/40 group-hover:border-blue-200/60 group-hover:shadow-2xs transition-all">
-                        {item.text}
+                        {item.text && <div>{item.text}</div>}
+                        {/* Note Images Preview */}
+                        {item.imgs && item.imgs.length > 0 && (
+                          <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                            {item.imgs.length === 1 ? (
+                              <div
+                                onClick={() => handleOpenViewer(item.imgs!, 0)}
+                                className="relative max-w-xs max-h-40 rounded-lg overflow-hidden border border-gray-200 shadow-2xs cursor-zoom-in"
+                              >
+                                <img
+                                  src={item.imgs[0]}
+                                  alt="便签图片"
+                                  className="w-full h-full max-h-40 object-cover hover:scale-102 transition-transform"
+                                />
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-2 gap-1.5 max-w-xs">
+                                {item.imgs.map((src, imgIdx) => (
+                                  <div
+                                    key={imgIdx}
+                                    onClick={() => handleOpenViewer(item.imgs!, imgIdx)}
+                                    className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 shadow-2xs cursor-zoom-in"
+                                  >
+                                    <img
+                                      src={src}
+                                      alt={`便签图片 ${imgIdx + 1}`}
+                                      className="w-full h-full object-cover hover:scale-105 transition-transform"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Associated Tag if present */}
@@ -153,6 +197,14 @@ export const ThreadDetailView: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Image Viewer Full-Screen Modal */}
+      <ImageViewerModal
+        isOpen={viewerOpen}
+        images={viewerImages}
+        initialIndex={viewerIndex}
+        onClose={() => setViewerOpen(false)}
+      />
     </div>
   );
 };

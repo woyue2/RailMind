@@ -47,9 +47,13 @@ interface FlowState {
       tag_id?: string | null;
       thread_id?: string | null;
       quote_id?: string | null;
+      imgs?: string[];
     }
   ) => RecordItem;
-  updateRecord: (id: string, updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id'>>) => void;
+  updateRecord: (
+    id: string,
+    updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id' | 'imgs'>>
+  ) => void;
   deleteRecord: (id: string) => void;
 
   // Actions for Threads
@@ -321,6 +325,7 @@ export const useFlowStore = create<FlowState>()(
           tag_id: options.tag_id || null,
           thread_id: threadId,
           quote_id: quoteId,
+          imgs: options.imgs && options.imgs.length > 0 ? options.imgs : undefined,
         };
 
         set((state) => {

@@ -4,6 +4,7 @@ import { EnrichedRecordItem, RecordItem } from '../../types';
 import { formatTime, formatShortDateTime } from '../../utils/dateUtils';
 import { useFlowStore } from '../../store/useFlowStore';
 import { ConfirmDeleteModal } from '../../components/modals/ConfirmDeleteModal';
+import { ImageViewerModal } from '../../components/modals/ImageViewerModal';
 
 interface RecordItemRowProps {
   item: EnrichedRecordItem;
@@ -42,6 +43,10 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Delete confirm modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+
+  // Image viewer modal state
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
 
   // Popover state for multiple downstream references
   const [showDownstreamPopover, setShowDownstreamPopover] = useState(false);
@@ -280,12 +285,58 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 </button>
               </div>
             ) : (
-              <div
-                onDoubleClick={() => setIsEditing(true)}
-                className="text-[13.5px] text-gray-900 leading-snug break-words font-normal cursor-text select-text"
-                title="双击可直接修改文字"
-              >
-                {item.text}
+              <div>
+                {item.text && (
+                  <div
+                    onDoubleClick={() => setIsEditing(true)}
+                    className="text-[13.5px] text-gray-900 leading-snug break-words font-normal cursor-text select-text"
+                    title="双击可直接修改文字"
+                  >
+                    {item.text}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Note Images Grid / Single Image (附带图片展示) */}
+            {item.imgs && item.imgs.length > 0 && (
+              <div className="mt-2">
+                {item.imgs.length === 1 ? (
+                  // 单张图片：自适应大卡片展示 (最大高 180px)
+                  <div
+                    onClick={() => {
+                      setViewerIndex(0);
+                      setViewerOpen(true);
+                    }}
+                    className="relative max-w-xs max-h-44 rounded-xl overflow-hidden border border-gray-200/80 shadow-2xs cursor-zoom-in group/img"
+                  >
+                    <img
+                      src={item.imgs[0]}
+                      alt="便签图片"
+                      className="w-full h-full max-h-44 object-cover group-hover/img:scale-102 transition-transform duration-200"
+                    />
+                  </div>
+                ) : (
+                  // 2~4 张图片：2 列紧凑正方形网格
+                  <div className="grid grid-cols-2 gap-1.5 max-w-xs">
+                    {item.imgs.map((src, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          setViewerIndex(idx);
+                          setViewerOpen(true);
+                        }}
+                        className="relative aspect-square rounded-lg overflow-hidden border border-gray-200/80 shadow-2xs cursor-zoom-in group/img"
+                      >
+                        <img
+                          src={src}
+                          alt={`便签图片 ${idx + 1}`}
+                          className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-200"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -480,6 +531,16 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
         recordText={item.text}
         hasChildren={hasChildren}
       />
+
+      {/* Image Viewer Full-Screen Modal */}
+      {item.imgs && item.imgs.length > 0 && (
+        <ImageViewerModal
+          isOpen={viewerOpen}
+          images={item.imgs}
+          initialIndex={viewerIndex}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
 
       {/*
         Render Nested Children Recursively:

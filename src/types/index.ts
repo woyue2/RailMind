@@ -8,6 +8,7 @@ export interface RecordItem {
   thread_id: string | null; // 手动关联的思维线 ID, 可选
   quote_id?: string | null; // 引用的历史记录 ID, 可选
   quote_color?: string | null; // 引用/分支源记录的专属色, 首次被引用时从色库随机分配
+  imgs?: string[]; // 附带的图片 Base64 数组 (最多 4 张)
 }
 
 // Tag 标签数据模型
