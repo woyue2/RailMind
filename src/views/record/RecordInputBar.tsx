@@ -1,13 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, X, GitBranch, Sparkles, Quote, Camera, Plus, Loader2 } from 'lucide-react';
+import { Send, X, GitBranch, Sparkles, Quote, Camera, Plus, Loader2, Mic, Check } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { processImageFiles, MAX_NOTE_IMAGES } from '../../utils/imageUtils';
+import { AudioAttachment } from '../../types';
+import { startRecording, stopRecording, cancelRecording, formatTimerSeconds } from '../../utils/audioUtils';
+import { AudioPlayerPill } from '../../components/common/AudioPlayerPill';
+
+const MAX_RECORDING_SECONDS = 60;
 
 export const RecordInputBar: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [pendingImgs, setPendingImgs] = useState<string[]>([]);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const [imgErrorTip, setImgErrorTip] = useState<string | null>(null);
+
+  // Audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [pendingAudio, setPendingAudio] = useState<AudioAttachment | null>(null);
+  const [audioErrorTip, setAudioErrorTip] = useState<string | null>(null);
+  const timerRef = useRef<number | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -40,6 +53,69 @@ export const RecordInputBar: React.FC = () => {
       inputRef.current.focus();
     }
   }, [activeBranchParentId, activeQuoteRecordId]);
+
+  // Recording timer countdown/countup
+  useEffect(() => {
+    if (isRecording) {
+      setRecordSeconds(0);
+      timerRef.current = window.setInterval(() => {
+        setRecordSeconds((prev) => {
+          if (prev + 1 >= MAX_RECORDING_SECONDS) {
+            handleStopRecording();
+            return MAX_RECORDING_SECONDS;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRecording]);
+
+  const handleStartRecording = async () => {
+    setAudioErrorTip(null);
+    try {
+      await startRecording();
+      setIsRecording(true);
+    } catch (err: any) {
+      setAudioErrorTip(err.message || '无法访问麦克风');
+      setTimeout(() => setAudioErrorTip(null), 3000);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (!isRecording) return;
+    setIsProcessingAudio(true);
+    setIsRecording(false);
+    try {
+      const res = await stopRecording();
+      setPendingAudio({
+        url: res.dataUrl,
+        duration: res.duration,
+        format: res.format,
+      });
+    } catch (err: any) {
+      setAudioErrorTip(err.message || '录音保存失败');
+      setTimeout(() => setAudioErrorTip(null), 3000);
+    } finally {
+      setIsProcessingAudio(false);
+    }
+  };
+
+  const handleCancelRecording = () => {
+    cancelRecording();
+    setIsRecording(false);
+  };
+
+  const handleRemovePendingAudio = () => {
+    setPendingAudio(null);
+  };
 
   // Handle image file selection
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,20 +150,27 @@ export const RecordInputBar: React.FC = () => {
     e.preventDefault();
     const hasText = !!inputText.trim();
     const hasImgs = pendingImgs.length > 0;
-    if (!hasText && !hasImgs) return;
+    const hasAudio = !!pendingAudio;
+    if (!hasText && !hasImgs && !hasAudio) return;
 
     addRecord(inputText, {
       parent_id: activeBranchParentId,
       thread_id: quickSelectedThreadId,
       quote_id: activeQuoteRecordId,
       imgs: hasImgs ? pendingImgs : undefined,
+      audio: pendingAudio || undefined,
     });
 
     setInputText('');
     setPendingImgs([]);
+    setPendingAudio(null);
   };
 
-  const canSubmit = (!!inputText.trim() || pendingImgs.length > 0) && !isProcessingImg;
+  const canSubmit =
+    (!!inputText.trim() || pendingImgs.length > 0 || !!pendingAudio) &&
+    !isProcessingImg &&
+    !isProcessingAudio &&
+    !isRecording;
 
   return (
     <div className="record-input-bar border-t border-gray-100 bg-white/95 backdrop-blur-md px-3 pt-2 pb-3">
@@ -176,6 +259,14 @@ export const RecordInputBar: React.FC = () => {
         </div>
       )}
 
+      {/* 2.4 待发送语音条 (Pending Audio Preview Pill) */}
+      {pendingAudio && (
+        <div className="flex items-center gap-2 mb-2 animate-in fade-in slide-in-from-bottom-1 duration-150">
+          <AudioPlayerPill audio={pendingAudio} onRemove={handleRemovePendingAudio} />
+          <span className="text-[11px] text-gray-400">已录制语音便签</span>
+        </div>
+      )}
+
       {/* 2.5 待发送图片预览条 (Pending Images Preview Strip) */}
       {pendingImgs.length > 0 && (
         <div className="flex items-center gap-2 mb-2 overflow-x-auto no-scrollbar py-1 animate-in fade-in slide-in-from-bottom-1 duration-150">
@@ -219,9 +310,9 @@ export const RecordInputBar: React.FC = () => {
       )}
 
       {/* 提示消息 */}
-      {imgErrorTip && (
+      {(imgErrorTip || audioErrorTip) && (
         <div className="text-[11px] text-amber-600 mb-1.5 px-1 animate-in fade-in">
-          {imgErrorTip}
+          {imgErrorTip || audioErrorTip}
         </div>
       )}
 
@@ -235,74 +326,144 @@ export const RecordInputBar: React.FC = () => {
         onChange={handleFileChange}
       />
 
-      {/* 3. Bottom Sticky Single Line Input + Option A Camera Button + Send Button */}
-      <form onSubmit={handleSubmit} className="flex items-center gap-2">
-        {/* Option A: 相机/相册图标按钮置于输入框最左侧 */}
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isProcessingImg || pendingImgs.length >= MAX_NOTE_IMAGES}
-          className={`p-2.5 rounded-xl transition-all flex items-center justify-center border flex-shrink-0 ${
-            pendingImgs.length > 0
-              ? 'bg-blue-50 text-blue-600 border-blue-200'
-              : 'bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-gray-800 border-gray-200/90'
-          } ${pendingImgs.length >= MAX_NOTE_IMAGES ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`}
-          title={
-            pendingImgs.length >= MAX_NOTE_IMAGES
-              ? '最多上传 4 张照片'
-              : '添加照片/随手拍'
-          }
-        >
-          {isProcessingImg ? (
-            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-          ) : (
-            <Camera className="w-4 h-4" />
-          )}
-        </button>
+      {/* 3. Recording cabin (录音中控制仓) OR Normal Input Bar */}
+      {isRecording ? (
+        <div className="flex items-center justify-between gap-3 bg-red-50/90 border border-red-200/90 rounded-2xl px-3.5 py-2 animate-in fade-in duration-150">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+            </span>
+            <div className="font-mono text-xs font-semibold text-red-600">
+              {formatTimerSeconds(recordSeconds)}
+              <span className="text-gray-400 font-normal ml-1">/ 01:00</span>
+            </div>
+          </div>
 
-        <div className="relative flex-1">
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={
-              activeBranchParentId
-                ? '输入分支子想法...'
-                : activeQuoteRecordId
-                ? '输入回应或引用想法...'
-                : quickSelectedThreadId
-                ? '此刻在想什么 (将关联选中思维线)...'
-                : pendingImgs.length > 0
-                ? '输入想法说明 (可选)...'
-                : '此刻在想什么...'
-            }
-            className="w-full pl-3.5 pr-8 py-2.5 bg-gray-50 border border-gray-200/90 rounded-xl text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:bg-white focus:border-gray-800 transition-colors"
-          />
-          {inputText && (
+          {/* Animated waveform bars */}
+          <div className="flex items-center gap-1 h-3 flex-1 justify-center max-w-[120px]">
+            {[...Array(7)].map((_, i) => (
+              <span
+                key={i}
+                className="w-1 bg-red-400 rounded-full animate-pulse"
+                style={{
+                  height: `${Math.sin(i * 0.9) * 8 + 8}px`,
+                  animationDelay: `${i * 120}ms`,
+                }}
+              />
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setInputText('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+              onClick={handleCancelRecording}
+              className="p-1.5 rounded-xl bg-white text-gray-500 hover:text-gray-800 border border-gray-200 text-xs shadow-2xs transition-colors"
+              title="取消录音"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
-          )}
+            <button
+              type="button"
+              onClick={handleStopRecording}
+              className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-medium shadow-2xs flex items-center gap-1 transition-all"
+              title="完成录音"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>完成</span>
+            </button>
+          </div>
         </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="flex items-center gap-1.5">
+          {/* 相机/相册图标按钮置于输入框最左侧 */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isProcessingImg || pendingImgs.length >= MAX_NOTE_IMAGES}
+            className={`p-2.5 rounded-xl transition-all flex items-center justify-center border flex-shrink-0 ${
+              pendingImgs.length > 0
+                ? 'bg-blue-50 text-blue-600 border-blue-200'
+                : 'bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-gray-800 border-gray-200/90'
+            } ${pendingImgs.length >= MAX_NOTE_IMAGES ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`}
+            title={
+              pendingImgs.length >= MAX_NOTE_IMAGES
+                ? '最多上传 4 张照片'
+                : '添加照片/随手拍'
+            }
+          >
+            {isProcessingImg ? (
+              <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+            ) : (
+              <Camera className="w-4 h-4" />
+            )}
+          </button>
 
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className={`p-2.5 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${
-            canSubmit
-              ? 'bg-gray-900 text-white hover:bg-black active:scale-95 shadow-sm'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-          }`}
-          title="发送记录 (Enter)"
-        >
-          <Send className="w-4 h-4" />
-        </button>
-      </form>
+          {/* 麦克风录音按钮 */}
+          <button
+            type="button"
+            onClick={handleStartRecording}
+            disabled={isProcessingAudio || !!pendingAudio}
+            className={`p-2.5 rounded-xl transition-all flex items-center justify-center border flex-shrink-0 ${
+              pendingAudio
+                ? 'bg-blue-50 text-blue-600 border-blue-200'
+                : 'bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-gray-800 border-gray-200/90'
+            } active:scale-95`}
+            title={pendingAudio ? '已录制语音' : '点击开始语音录音'}
+          >
+            {isProcessingAudio ? (
+              <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+            ) : (
+              <Mic className="w-4 h-4" />
+            )}
+          </button>
+
+          <div className="relative flex-1">
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={
+                activeBranchParentId
+                  ? '输入分支子想法...'
+                  : activeQuoteRecordId
+                  ? '输入回应或引用想法...'
+                  : quickSelectedThreadId
+                  ? '此刻在想什么 (将关联选中思维线)...'
+                  : pendingAudio
+                  ? '输入语音文字说明 (可选)...'
+                  : pendingImgs.length > 0
+                  ? '输入想法说明 (可选)...'
+                  : '此刻在想什么...'
+              }
+              className="w-full pl-3.5 pr-8 py-2.5 bg-gray-50 border border-gray-200/90 rounded-xl text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:bg-white focus:border-gray-800 transition-colors"
+            />
+            {inputText && (
+              <button
+                type="button"
+                onClick={() => setInputText('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className={`p-2.5 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${
+              canSubmit
+                ? 'bg-gray-900 text-white hover:bg-black active:scale-95 shadow-sm'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            }`}
+            title="发送记录 (Enter)"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </form>
+      )}
     </div>
   );
 };

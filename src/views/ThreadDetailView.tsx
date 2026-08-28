@@ -4,6 +4,7 @@ import { useFlowStore } from '../store/useFlowStore';
 import { formatSimpleDate, formatTime, calculateDaysBetween } from '../utils/dateUtils';
 import { parseISO, differenceInDays, format } from 'date-fns';
 import { ImageViewerModal } from '../components/modals/ImageViewerModal';
+import { AudioPlayerPill } from '../components/common/AudioPlayerPill';
 
 export const ThreadDetailView: React.FC = () => {
   const selectedThreadId = useFlowStore((s) => s.selectedThreadId);
@@ -138,9 +139,20 @@ export const ThreadDetailView: React.FC = () => {
                       </div>
 
                       {/* Original Record Text Card */}
-                      <div className="text-sm text-gray-800 leading-relaxed break-words bg-gray-50/70 p-3 rounded-xl border border-gray-100 group-hover:bg-blue-50/40 group-hover:border-blue-200/60 group-hover:shadow-2xs transition-all">
+                      <div
+                        className="text-sm text-gray-800 leading-relaxed break-words p-3 rounded-xl border transition-all"
+                        style={{
+                          backgroundColor: item.bg_color || 'rgba(249, 250, 251, 0.7)',
+                          borderColor: item.bg_color ? 'rgba(0,0,0,0.06)' : 'rgb(243, 244, 246)',
+                        }}
+                      >
                         {item.text && <div>{item.text}</div>}
-                        {/* Note Images Preview */}
+                        {/* Note Audio Player Pill */}
+                        {item.audio && (
+                          <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                            <AudioPlayerPill audio={item.audio} />
+                          </div>
+                        )}
                         {item.imgs && item.imgs.length > 0 && (
                           <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                             {item.imgs.length === 1 ? (

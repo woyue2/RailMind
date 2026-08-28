@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { RecordItem, TagItem, ThreadItem, EnrichedRecordItem, HomeLink } from '../types';
+import { RecordItem, TagItem, ThreadItem, EnrichedRecordItem, HomeLink, AudioAttachment } from '../types';
 import { generateId } from '../utils/dateUtils';
 import { pickRandomQuoteColor } from '../utils/quoteColors';
 import { createR2SyncService } from '../sync';
@@ -48,11 +48,13 @@ interface FlowState {
       thread_id?: string | null;
       quote_id?: string | null;
       imgs?: string[];
+      bg_color?: string | null;
+      audio?: AudioAttachment | null;
     }
   ) => RecordItem;
   updateRecord: (
     id: string,
-    updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id' | 'imgs'>>
+    updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id' | 'imgs' | 'bg_color' | 'audio'>>
   ) => void;
   deleteRecord: (id: string) => void;
 
@@ -145,11 +147,12 @@ const initialRecords: RecordItem[] = [
   },
   {
     id: 'rec_2',
-    text: '10月3日去看演唱会',
+    text: '10月3日去看演唱会，抢到票了！',
     created_at: '2026-08-26T09:40:00.000Z',
     parent_id: null,
     tag_id: null,
     thread_id: 'thread_concert',
+    imgs: ['/mock_pic.png'],
   },
   {
     id: 'rec_3',
@@ -326,6 +329,8 @@ export const useFlowStore = create<FlowState>()(
           thread_id: threadId,
           quote_id: quoteId,
           imgs: options.imgs && options.imgs.length > 0 ? options.imgs : undefined,
+          bg_color: options.bg_color || null,
+          audio: options.audio || undefined,
         };
 
         set((state) => {

@@ -1,3 +1,10 @@
+// Audio 录音/语音便签附件
+export interface AudioAttachment {
+  url: string; // Base64 audio data URL (audio/webm or audio/mp4)
+  duration: number; // Duration in seconds (e.g. 15)
+  format?: string; // 'audio/webm' | 'audio/mp4'
+}
+
 // Record 数据模型
 export interface RecordItem {
   id: string;
@@ -9,6 +16,8 @@ export interface RecordItem {
   quote_id?: string | null; // 引用的历史记录 ID, 可选
   quote_color?: string | null; // 引用/分支源记录的专属色, 首次被引用时从色库随机分配
   imgs?: string[]; // 附带的图片 Base64 数组 (最多 4 张)
+  bg_color?: string | null; // 单条便签自定义背景色 (null/undefined 为默认无色)
+  audio?: AudioAttachment | null; // 附带的语音录音便签
 }
 
 // Tag 标签数据模型

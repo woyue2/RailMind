@@ -1,10 +1,29 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GitBranch, Link2, X, Pencil, Check, Quote } from 'lucide-react';
+import {
+  GitBranch,
+  Link2,
+  X,
+  Pencil,
+  Check,
+  Quote,
+  Palette,
+  Sparkles,
+  ArrowUpRightFromSquare,
+  Camera,
+  Loader2,
+  Mic,
+  Volume2,
+  MoreHorizontal,
+  ChevronUp,
+} from 'lucide-react';
 import { EnrichedRecordItem, RecordItem } from '../../types';
 import { formatTime, formatShortDateTime } from '../../utils/dateUtils';
+import { processImageFiles, MAX_NOTE_IMAGES } from '../../utils/imageUtils';
 import { useFlowStore } from '../../store/useFlowStore';
 import { ConfirmDeleteModal } from '../../components/modals/ConfirmDeleteModal';
 import { ImageViewerModal } from '../../components/modals/ImageViewerModal';
+import { AudioPlayerPill } from '../../components/common/AudioPlayerPill';
+import { AudioRecorderModal } from '../../components/modals/AudioRecorderModal';
 
 interface RecordItemRowProps {
   item: EnrichedRecordItem;
@@ -48,6 +67,21 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
 
+  // Append images to an existing record
+  const imgInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingImg, setIsProcessingImg] = useState(false);
+  const [imgErrorTip, setImgErrorTip] = useState<string | null>(null);
+  const imgSlots = (item.imgs?.length ?? 0) < MAX_NOTE_IMAGES;
+
+  // Note custom background color popover state
+  const [showColorPicker, setShowColorPicker] = useState(false);
+
+  // Audio recorder modal state for existing record
+  const [audioModalOpen, setAudioModalOpen] = useState(false);
+
+  // Dynamic actions expansion state (default collapsed to 2 rows)
+  const [isActionsExpanded, setIsActionsExpanded] = useState(false);
+
   // Popover state for multiple downstream references
   const [showDownstreamPopover, setShowDownstreamPopover] = useState(false);
 
@@ -79,9 +113,10 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   const isCrossDayBranchChild = level === 0 && !!item.parent_id;
   const showUpstreamCard = !!item.quote_id || isCrossDayBranchChild;
   const upstreamRecord = item.quote_id ? quotedRecord : parentRecord;
-  // 源记录引用色(同源同色, 无则回退琥珀)
+  // 源记录引用色: 引用路径取被引记录的 color；跨日分支退化取父记录的 color。
+  // 谨记不 fallback 到自身 color，否则子记录会取错自己的色，导致同源不同色。
   const upstreamColor =
-    (item.quote_id ? quotedRecord?.quote_color : parentRecord?.quote_color) || item.quote_color || null;
+    (item.quote_id ? quotedRecord?.quote_color : parentRecord?.quote_color) || null;
 
   // Downstream records that quote this record
   const downstreamQuotes = records.filter((r) => r.quote_id === item.id);
@@ -164,6 +199,32 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
     }
   };
 
+  // Append images to the existing record (compress then merge into imgs)
+  const handleAddImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    e.target.value = ''; // 允许再次选择同一文件
+    if (!files || files.length === 0) return;
+    setIsProcessingImg(true);
+    try {
+      const current = item.imgs?.length ?? 0;
+      const { compressed, error } = await processImageFiles(files, current);
+      if (compressed.length > 0) {
+        const merged = [...(item.imgs ?? []), ...compressed].slice(0, MAX_NOTE_IMAGES);
+        updateRecord(item.id, { imgs: merged });
+      }
+      setImgErrorTip(error ?? null);
+      if (error) {
+        setTimeout(() => setImgErrorTip(null), 2500);
+      }
+    } catch (err) {
+      console.error('Failed to process image:', err);
+      setImgErrorTip('图片处理失败，请重试');
+      setTimeout(() => setImgErrorTip(null), 2500);
+    } finally {
+      setIsProcessingImg(false);
+    }
+  };
+
   return (
     <div className="relative" id={`record-${item.id}`}>
       {/*
@@ -209,9 +270,14 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               ? 'bg-amber-50/60 ring-1 ring-amber-300/80 shadow-2xs'
               : isEditing
               ? 'bg-blue-50/40 ring-1 ring-blue-200 shadow-2xs'
+              : item.bg_color
+              ? 'border border-black/5 shadow-2xs'
               : 'hover:bg-gray-50/90'
           }`}
-          style={item.quote_color ? { boxShadow: `inset 3px 0 0 0 ${item.quote_color}` } : undefined}
+          style={{
+            backgroundColor: !isHighlighted && !isBranchingThis && !isQuotingThis && !isEditing && item.bg_color ? item.bg_color : undefined,
+            boxShadow: item.quote_color ? `inset 3px 0 0 0 ${item.quote_color}` : undefined,
+          }}
         >
           {/* Timestamp: 灰色小号时间戳 */}
           <span className="text-[11.5px] font-mono text-gray-400 mt-0.5 mr-2 flex-shrink-0 w-10 select-none">
@@ -245,9 +311,17 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                     >
                       {formatShortDateTime(upstreamRecord.created_at)}
                     </span>
-                    <span className="text-[11px] truncate font-normal">
+                    <span
+                      className="text-[11px] truncate font-normal flex-1 min-w-0"
+                      style={{ color: upstreamColor ?? '#6b7280' }}
+                    >
                       {upstreamRecord.text}
                     </span>
+                    {/* 跳转箭头: 提示该卡可点击跳转到源记录 */}
+                    <ArrowUpRightFromSquare
+                      className="w-3 h-3 flex-shrink-0 opacity-60 group-hover/quote:opacity-100 group-hover/quote:scale-110 transition-all"
+                      style={{ color: upstreamColor ?? '#d97706' }}
+                    />
                   </button>
                 ) : (
                   <div className="text-[10.5px] text-gray-400 italic px-2 py-0.5 rounded bg-gray-50 border border-dashed border-gray-200">
@@ -298,26 +372,53 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               </div>
             )}
 
-            {/* Note Images Grid / Single Image (附带图片展示) */}
+            {/* Note Images Grid / Single Image (附带图片展示) + 追加/添加图片入口 */}
+            {imgErrorTip && (
+              <div className="text-[11px] text-amber-600 mb-1.5 px-0.5 animate-in fade-in">
+                {imgErrorTip}
+              </div>
+            )}
+
             {item.imgs && item.imgs.length > 0 && (
               <div className="mt-2">
                 {item.imgs.length === 1 ? (
-                  // 单张图片：自适应大卡片展示 (最大高 180px)
-                  <div
-                    onClick={() => {
-                      setViewerIndex(0);
-                      setViewerOpen(true);
-                    }}
-                    className="relative max-w-xs max-h-44 rounded-xl overflow-hidden border border-gray-200/80 shadow-2xs cursor-zoom-in group/img"
-                  >
-                    <img
-                      src={item.imgs[0]}
-                      alt="便签图片"
-                      className="w-full h-full max-h-44 object-cover group-hover/img:scale-102 transition-transform duration-200"
-                    />
+                  // 单张图片：自适应大卡片展示 + 右侧追加按钮
+                  <div className="flex items-start gap-1.5">
+                    <div
+                      onClick={() => {
+                        setViewerIndex(0);
+                        setViewerOpen(true);
+                      }}
+                      className="relative max-w-xs max-h-44 rounded-xl overflow-hidden border border-gray-200/80 shadow-2xs cursor-zoom-in group/img"
+                    >
+                      <img
+                        src={item.imgs[0]}
+                        alt="便签图片"
+                        className="w-full h-full max-h-44 object-cover group-hover/img:scale-102 transition-transform duration-200"
+                      />
+                    </div>
+                    {/* 未达上限：单图旁追加 */}
+                    {imgSlots && (
+                      <button
+                        type="button"
+                        onClick={() => imgInputRef.current?.click()}
+                        disabled={isProcessingImg}
+                        className="w-14 h-14 self-start mt-1 rounded-lg border border-dashed border-gray-300 hover:border-gray-400 bg-gray-50 flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:text-gray-600 flex-shrink-0 transition-colors"
+                        title={`追加图片 (${item.imgs.length}/${MAX_NOTE_IMAGES})`}
+                      >
+                        {isProcessingImg ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+                        ) : (
+                          <>
+                            <Camera className="w-4 h-4" />
+                            <span className="text-[10px] scale-90">{item.imgs.length}/{MAX_NOTE_IMAGES}</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 ) : (
-                  // 2~4 张图片：2 列紧凑正方形网格
+                  // 2~4 张图片：2 列紧凑正方形网格，末尾追加一格
                   <div className="grid grid-cols-2 gap-1.5 max-w-xs">
                     {item.imgs.map((src, idx) => (
                       <div
@@ -335,8 +436,31 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                         />
                       </div>
                     ))}
+                    {/* 未达上限：网格末尾追加一格 */}
+                    {imgSlots && (
+                      <button
+                        type="button"
+                        onClick={() => imgInputRef.current?.click()}
+                        disabled={isProcessingImg}
+                        className="aspect-square rounded-lg border border-dashed border-gray-300 hover:border-gray-400 bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors group/add"
+                        title={`追加图片 (${item.imgs.length}/${MAX_NOTE_IMAGES})`}
+                      >
+                        {isProcessingImg ? (
+                          <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
+                        ) : (
+                          <Camera className="w-5 h-5 group-hover/add:scale-110 transition-transform" />
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Note Audio Player Pill (附带录音便签展示) */}
+            {item.audio && (
+              <div className="mt-2">
+                <AudioPlayerPill audio={item.audio} />
               </div>
             )}
 
@@ -457,7 +581,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
           {/* Action Buttons: ✎ (Edit), ⎇ (Branch), 💬 (Quote), ⚭ (Link Thread), ✕ (Delete) */}
           {/* 当处于编辑模式(isEditing)时隐藏普通操作按钮，避免打勾保存/取消与分支按钮挤压与点击冲突 */}
           {!isEditing && (
-            <div className="flex items-center gap-0.5 flex-shrink-0 pt-0.5">
+            <div className="grid grid-cols-3 gap-0.5 flex-shrink-0 pt-0.5 place-items-center">
               {/* ✎ In-place Edit Button */}
               <button
                 onClick={() => setIsEditing(true)}
@@ -510,18 +634,190 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 <Link2 className="w-3.5 h-3.5" />
               </button>
 
-              {/* Delete button (Pops up confirmation modal) */}
+              {/* 🎨 Palette Button for per-note background color */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowColorPicker((prev) => !prev)}
+                  className={`p-1.5 rounded transition-all ${
+                    item.bg_color
+                      ? 'text-amber-700 bg-amber-100/80 ring-1 ring-amber-300 font-medium opacity-100'
+                      : 'text-gray-400 hover:text-amber-700 hover:bg-amber-50 opacity-60 group-hover:opacity-100'
+                  }`}
+                  title="设置便签背景颜色 (🎨)"
+                >
+                  <Palette className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Color Picker Popover */}
+                {showColorPicker && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-30"
+                      onClick={() => setShowColorPicker(false)}
+                    />
+                    <div className="absolute right-0 bottom-full mb-2 z-40 w-48 bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-gray-200/90 p-2.5 animate-in fade-in zoom-in-95 duration-150 select-none">
+                      <div className="flex items-center justify-between text-[11px] font-medium text-gray-500 mb-2 pb-1 border-b border-gray-100">
+                        <span className="flex items-center gap-1">
+                          <Palette className="w-3 h-3 text-amber-600" />
+                          便签背景底色
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateRecord(item.id, { bg_color: null });
+                            setShowColorPicker(false);
+                          }}
+                          className="text-[10px] text-gray-400 hover:text-red-600 transition-colors"
+                        >
+                          默认无色
+                        </button>
+                      </div>
+
+                      {/* 预设低饱和马卡龙/手账便签底色 */}
+                      <div className="grid grid-cols-4 gap-1.5 mb-2">
+                        {[
+                          { name: '柠檬浅黄', color: '#FEF9C3' },
+                          { name: '柔和杏粉', color: '#FFE4E6' },
+                          { name: '薄荷浅绿', color: '#DCFCE7' },
+                          { name: '冰雾浅蓝', color: '#E0F2FE' },
+                          { name: '薰衣草紫', color: '#F3E8FF' },
+                          { name: '暖橙浅麦', color: '#FFEDD5' },
+                          { name: '恬淡浅青', color: '#CCFBF1' },
+                          { name: '典雅浅灰', color: '#F1F5F9' },
+                        ].map((c) => (
+                          <button
+                            key={c.color}
+                            type="button"
+                            onClick={() => {
+                              updateRecord(item.id, { bg_color: c.color });
+                              setShowColorPicker(false);
+                            }}
+                            className={`w-8 h-8 rounded-lg border transition-all flex items-center justify-center ${
+                              item.bg_color === c.color
+                                ? 'border-gray-900 scale-110 shadow-xs'
+                                : 'border-gray-200/90 hover:scale-105 hover:border-gray-400'
+                            }`}
+                            style={{ backgroundColor: c.color }}
+                            title={c.name}
+                          >
+                            {item.bg_color === c.color && (
+                              <Check className="w-3.5 h-3.5 text-gray-800" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* 自定义颜色取色器 */}
+                      <label className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer text-[11px] text-gray-700 transition-colors">
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3 text-blue-500" />
+                          自定义颜色
+                        </span>
+                        <input
+                          type="color"
+                          value={item.bg_color || '#ffffff'}
+                          onChange={(e) => {
+                            updateRecord(item.id, { bg_color: e.target.value });
+                          }}
+                          className="w-5 h-5 rounded cursor-pointer border-0 p-0 bg-transparent"
+                        />
+                      </label>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* ··· More / Expand 3rd Row Toggle Button (Slot 6) */}
               <button
-                onClick={() => setDeleteModalOpen(true)}
-                className="p-1.5 text-gray-300 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                title="删除记录"
+                type="button"
+                onClick={() => setIsActionsExpanded((prev) => !prev)}
+                className={`relative p-1.5 rounded transition-all flex items-center justify-center ${
+                  isActionsExpanded
+                    ? 'text-blue-600 bg-blue-50 ring-1 ring-blue-300 opacity-100'
+                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 opacity-60 group-hover:opacity-100'
+                }`}
+                title={isActionsExpanded ? '收起更多操作' : '展开更多操作 (📷图片 / 🎙️录音 / 🏷️标签 / ✕删除)'}
               >
-                <X className="w-3.5 h-3.5" />
+                {isActionsExpanded ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-blue-600" />
+                ) : (
+                  <>
+                    <MoreHorizontal className="w-3.5 h-3.5" />
+                    {/* 微小状态提示点：如果该记录已附带图片或音频 */}
+                    {(item.imgs?.length || item.audio || item.tag) ? (
+                      <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-500 ring-1 ring-white" />
+                    ) : null}
+                  </>
+                )}
               </button>
+
+              {/* Row 3 (Dynamically rendered only when expanded) */}
+              {isActionsExpanded && (
+                <>
+                  {/* 📷 Add / Manage Image Button */}
+                  <button
+                    type="button"
+                    onClick={() => imgInputRef.current?.click()}
+                    disabled={isProcessingImg}
+                    className={`p-1.5 rounded transition-all flex items-center justify-center animate-in fade-in slide-in-from-top-1 duration-150 ${
+                      item.imgs && item.imgs.length > 0
+                        ? 'text-sky-600 bg-sky-50 ring-1 ring-sky-300 font-medium opacity-100'
+                        : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50 opacity-80 hover:opacity-100'
+                    }`}
+                    title={
+                      item.imgs && item.imgs.length > 0
+                        ? `追加/管理图片 (已附带 ${item.imgs.length}/${MAX_NOTE_IMAGES} 张)`
+                        : '为此记录添加图片/随手拍 (📷)'
+                    }
+                  >
+                    {isProcessingImg ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+
+                  {/* 🎙️ Voice Memo / Mic Recording Button */}
+                  <button
+                    type="button"
+                    onClick={() => setAudioModalOpen(true)}
+                    className={`p-1.5 rounded transition-all flex items-center justify-center animate-in fade-in slide-in-from-top-1 duration-150 ${
+                      item.audio
+                        ? 'text-indigo-600 bg-indigo-50 ring-1 ring-indigo-300 font-medium opacity-100'
+                        : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 opacity-80 hover:opacity-100'
+                    }`}
+                    title={
+                      item.audio
+                        ? `管理/重新录制语音 (${item.audio.duration}s)`
+                        : '为此记录录制语音便签 (🎙️)'
+                    }
+                  >
+                    {item.audio ? <Volume2 className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                  </button>
+
+                  {/* Delete button (Pops up confirmation modal) */}
+                  <button
+                    onClick={() => setDeleteModalOpen(true)}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded opacity-80 hover:opacity-100 transition-all animate-in fade-in slide-in-from-top-1 duration-150"
+                    title="删除记录 (✕)"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
       </div>
+
+      {/* Audio Recorder Modal for existing note */}
+      <AudioRecorderModal
+        isOpen={audioModalOpen}
+        onClose={() => setAudioModalOpen(false)}
+        onSaveAudio={(audio) => updateRecord(item.id, { audio })}
+        initialAudio={item.audio}
+      />
 
       {/* Delete Confirmation Modal */}
       <ConfirmDeleteModal
@@ -530,6 +826,16 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
         onConfirm={() => deleteRecord(item.id)}
         recordText={item.text}
         hasChildren={hasChildren}
+      />
+
+      {/* Hidden File Input for appending images to an existing record */}
+      <input
+        ref={imgInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={handleAddImages}
       />
 
       {/* Image Viewer Full-Screen Modal */}
