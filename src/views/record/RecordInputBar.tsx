@@ -138,7 +138,11 @@ export const RecordInputBar: React.FC = () => {
   // Handle image file selection
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0) {
+      // Android WebView 下 display:none 文件框选择后可能返回空，此时仍给出反馈
+      showImageTip('未读取到所选图片，请重试', 'warning');
+      return;
+    }
 
     setIsProcessingImg(true);
     setImgTip({ message: `正在处理 ${files.length} 张图片…`, tone: 'info' });
@@ -353,7 +357,8 @@ export const RecordInputBar: React.FC = () => {
         type="file"
         accept="image/*"
         multiple
-        className="hidden"
+        // 用离屏定位代替 display:none，规避 Android WebView 对隐藏文件框选择结果丢失的问题
+        className="fixed opacity-0 w-px h-px -left-[9999px]"
         onChange={handleFileChange}
       />
 

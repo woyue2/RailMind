@@ -132,7 +132,7 @@ export const ThreadDetailView: React.FC = () => {
                     >
                       {/* Date header with context jump indicator */}
                       <div className="flex items-center justify-between text-xs text-gray-400 mb-1 pr-1">
-                        <span className="font-semibold">● {formatSimpleDate(item.created_at)} {formatTime(item.created_at)}</span>
+                        <span className="font-semibold">{formatSimpleDate(item.created_at)} {formatTime(item.created_at)}</span>
                         <span className="text-[11px] text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-0.5">
                           查看当天上下文 <ExternalLink className="w-2.5 h-2.5" />
                         </span>
