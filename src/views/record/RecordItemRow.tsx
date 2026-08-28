@@ -15,9 +15,10 @@ import {
   Volume2,
   MoreHorizontal,
   ChevronUp,
+  Pin,
 } from 'lucide-react';
 import { EnrichedRecordItem, RecordItem } from '../../types';
-import { formatTime, formatShortDateTime } from '../../utils/dateUtils';
+import { formatTime, formatShortDateTime, getLocalDateKey } from '../../utils/dateUtils';
 import { processImageFiles, MAX_NOTE_IMAGES } from '../../utils/imageUtils';
 import { useFlowStore } from '../../store/useFlowStore';
 import { ConfirmDeleteModal } from '../../components/modals/ConfirmDeleteModal';
@@ -50,6 +51,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   const openThreadDetail = useFlowStore((s) => s.openThreadDetail);
   const deleteRecord = useFlowStore((s) => s.deleteRecord);
   const updateRecord = useFlowStore((s) => s.updateRecord);
+  const togglePinRecord = useFlowStore((s) => s.togglePinRecord);
   const quickSelectedThreadId = useFlowStore((s) => s.quickSelectedThreadId);
   const setQuickSelectedThreadId = useFlowStore((s) => s.setQuickSelectedThreadId);
   const threads = useFlowStore((s) => s.threads);
@@ -70,7 +72,10 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   // Append images to an existing record
   const imgInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
-  const [imgErrorTip, setImgErrorTip] = useState<string | null>(null);
+  const [imgTip, setImgTip] = useState<{
+    message: string;
+    tone: 'info' | 'success' | 'warning';
+  } | null>(null);
   const imgSlots = (item.imgs?.length ?? 0) < MAX_NOTE_IMAGES;
 
   // Note custom background color popover state
@@ -132,7 +137,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
         setHighlightRecordId(null);
       }, 1600);
     } else {
-      const targetDate = targetRecord.created_at.split('T')[0];
+      const targetDate = getLocalDateKey(targetRecord.created_at);
       openDateRecord(targetDate);
       setHighlightRecordId(targetRecord.id);
       setTimeout(() => {
@@ -199,27 +204,35 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
     }
   };
 
+  const showImageTip = (message: string, tone: 'success' | 'warning') => {
+    setImgTip({ message, tone });
+    setTimeout(() => setImgTip(null), 3500);
+  };
+
   // Append images to the existing record (compress then merge into imgs)
   const handleAddImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     e.target.value = ''; // 允许再次选择同一文件
     if (!files || files.length === 0) return;
+
     setIsProcessingImg(true);
+    setImgTip({ message: `正在处理 ${files.length} 张图片…`, tone: 'info' });
     try {
       const current = item.imgs?.length ?? 0;
       const { compressed, error } = await processImageFiles(files, current);
       if (compressed.length > 0) {
         const merged = [...(item.imgs ?? []), ...compressed].slice(0, MAX_NOTE_IMAGES);
         updateRecord(item.id, { imgs: merged });
-      }
-      setImgErrorTip(error ?? null);
-      if (error) {
-        setTimeout(() => setImgErrorTip(null), 2500);
+        showImageTip(
+          error ? `已添加 ${compressed.length} 张图片；${error}` : `已添加 ${compressed.length} 张图片`,
+          error ? 'warning' : 'success'
+        );
+      } else {
+        showImageTip(error || '未能处理所选图片，请重试', 'warning');
       }
     } catch (err) {
       console.error('Failed to process image:', err);
-      setImgErrorTip('图片处理失败，请重试');
-      setTimeout(() => setImgErrorTip(null), 2500);
+      showImageTip('图片处理失败，请重试', 'warning');
     } finally {
       setIsProcessingImg(false);
     }
@@ -279,10 +292,27 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
             boxShadow: item.quote_color ? `inset 3px 0 0 0 ${item.quote_color}` : undefined,
           }}
         >
-          {/* Timestamp: 灰色小号时间戳 */}
-          <span className="text-[11.5px] font-mono text-gray-400 mt-0.5 mr-2 flex-shrink-0 w-10 select-none">
-            {formatTime(item.created_at)}
-          </span>
+          {/* Timestamp & 📌 Pin icon directly under hh:mm */}
+          <div className="flex flex-col items-center mr-2 flex-shrink-0 w-10 select-none">
+            <span className="text-[11.5px] font-mono text-gray-400 mt-0.5">
+              {formatTime(item.created_at)}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePinRecord(item.id);
+              }}
+              className={`mt-1 p-0.5 rounded transition-all cursor-pointer ${
+                item.is_pinned
+                  ? 'text-amber-500 bg-amber-50 shadow-2xs scale-105'
+                  : 'min-w-9 min-h-9 text-gray-300 hover:text-amber-500 opacity-100 pointer-fine:opacity-0 group-hover:opacity-100'
+              }`}
+              title={item.is_pinned ? '取消置顶气泡' : '置顶为浮动气泡'}
+            >
+              <Pin className={`w-3 h-3 ${item.is_pinned ? 'fill-amber-500' : ''}`} />
+            </button>
+          </div>
 
           {/* Main Content Area */}
           <div className="flex-1 min-w-0 pr-1">
@@ -373,9 +403,17 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
             )}
 
             {/* Note Images Grid / Single Image (附带图片展示) + 追加/添加图片入口 */}
-            {imgErrorTip && (
-              <div className="text-[11px] text-amber-600 mb-1.5 px-0.5 animate-in fade-in">
-                {imgErrorTip}
+            {imgTip && (
+              <div
+                className={`text-[11px] mb-1.5 px-0.5 animate-in fade-in ${
+                  imgTip.tone === 'warning'
+                    ? 'text-amber-600'
+                    : imgTip.tone === 'success'
+                      ? 'text-emerald-600'
+                      : 'text-sky-600'
+                }`}
+              >
+                {imgTip.message}
               </div>
             )}
 
@@ -494,7 +532,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               ) : (
                 <button
                   onClick={() => onOpenTagPicker(item.id, null)}
-                  className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded border border-dashed border-gray-200 hover:border-gray-400 transition-all cursor-pointer"
+                  className="pointer-fine:opacity-0 group-hover:opacity-100 text-[10px] text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded border border-dashed border-gray-200 hover:border-gray-400 transition-all cursor-pointer"
                   title="补打标签"
                 >
                   +打标签
@@ -585,7 +623,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               {/* ✎ In-place Edit Button */}
               <button
                 onClick={() => setIsEditing(true)}
-                className="p-1.5 text-gray-400 hover:text-gray-800 hover:bg-gray-100 rounded transition-all opacity-0 group-hover:opacity-100"
+                className="p-1.5 text-gray-400 hover:text-gray-800 hover:bg-gray-100 rounded transition-all pointer-fine:opacity-0 group-hover:opacity-100"
                 title="修改文字 (双击亦可编辑)"
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -597,7 +635,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 className={`p-1.5 rounded transition-all flex items-center justify-center ${
                   isBranchingThis
                     ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400 font-bold'
-                    : 'text-gray-400 hover:text-gray-800 hover:bg-gray-100 opacity-60 group-hover:opacity-100'
+                    : 'text-gray-400 hover:text-gray-800 hover:bg-gray-100 pointer-fine:opacity-60 group-hover:opacity-100'
                 }`}
                 title={isBranchingThis ? '取消分支' : '新建分支子记录 (⎇)'}
               >
@@ -610,7 +648,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 className={`p-1.5 rounded transition-all flex items-center justify-center ${
                   isQuotingThis
                     ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400 font-bold opacity-100'
-                    : 'text-gray-400 hover:text-amber-700 hover:bg-amber-50 opacity-60 group-hover:opacity-100'
+                    : 'text-gray-400 hover:text-amber-700 hover:bg-amber-50 pointer-fine:opacity-60 group-hover:opacity-100'
                 }`}
                 title={isQuotingThis ? '取消引用' : '引用此记录 (💬)'}
               >
@@ -623,7 +661,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 className={`p-1.5 rounded transition-all ${
                   activeQuickThread
                     ? 'text-blue-600 bg-blue-50 ring-1 ring-blue-300 font-medium opacity-100'
-                    : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50 opacity-60 group-hover:opacity-100'
+                    : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50 pointer-fine:opacity-60 group-hover:opacity-100'
                 }`}
                 title={
                   activeQuickThread
@@ -642,7 +680,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                   className={`p-1.5 rounded transition-all ${
                     item.bg_color
                       ? 'text-amber-700 bg-amber-100/80 ring-1 ring-amber-300 font-medium opacity-100'
-                      : 'text-gray-400 hover:text-amber-700 hover:bg-amber-50 opacity-60 group-hover:opacity-100'
+                      : 'text-gray-400 hover:text-amber-700 hover:bg-amber-50 pointer-fine:opacity-60 group-hover:opacity-100'
                   }`}
                   title="设置便签背景颜色 (🎨)"
                 >
@@ -735,7 +773,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 className={`relative p-1.5 rounded transition-all flex items-center justify-center ${
                   isActionsExpanded
                     ? 'text-blue-600 bg-blue-50 ring-1 ring-blue-300 opacity-100'
-                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 opacity-60 group-hover:opacity-100'
+                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 pointer-fine:opacity-60 group-hover:opacity-100'
                 }`}
                 title={isActionsExpanded ? '收起更多操作' : '展开更多操作 (📷图片 / 🎙️录音 / 🏷️标签 / ✕删除)'}
               >

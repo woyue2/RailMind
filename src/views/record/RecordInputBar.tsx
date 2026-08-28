@@ -3,7 +3,7 @@ import { Send, X, GitBranch, Sparkles, Quote, Camera, Plus, Loader2, Mic, Check 
 import { useFlowStore } from '../../store/useFlowStore';
 import { processImageFiles, MAX_NOTE_IMAGES } from '../../utils/imageUtils';
 import { AudioAttachment } from '../../types';
-import { startRecording, stopRecording, cancelRecording, formatTimerSeconds } from '../../utils/audioUtils';
+import { createRecordingSession, formatTimerSeconds, RecordingSession } from '../../utils/audioUtils';
 import { AudioPlayerPill } from '../../components/common/AudioPlayerPill';
 
 const MAX_RECORDING_SECONDS = 60;
@@ -12,7 +12,10 @@ export const RecordInputBar: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [pendingImgs, setPendingImgs] = useState<string[]>([]);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
-  const [imgErrorTip, setImgErrorTip] = useState<string | null>(null);
+  const [imgTip, setImgTip] = useState<{
+    message: string;
+    tone: 'info' | 'success' | 'warning';
+  } | null>(null);
 
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -21,6 +24,7 @@ export const RecordInputBar: React.FC = () => {
   const [pendingAudio, setPendingAudio] = useState<AudioAttachment | null>(null);
   const [audioErrorTip, setAudioErrorTip] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
+  const recordingSessionRef = useRef<RecordingSession | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,10 +82,16 @@ export const RecordInputBar: React.FC = () => {
     };
   }, [isRecording]);
 
+  useEffect(() => () => {
+    recordingSessionRef.current?.dispose();
+  }, []);
+
   const handleStartRecording = async () => {
     setAudioErrorTip(null);
     try {
-      await startRecording();
+      const session = createRecordingSession();
+      recordingSessionRef.current = session;
+      await session.start();
       setIsRecording(true);
     } catch (err: any) {
       setAudioErrorTip(err.message || '无法访问麦克风');
@@ -94,7 +104,8 @@ export const RecordInputBar: React.FC = () => {
     setIsProcessingAudio(true);
     setIsRecording(false);
     try {
-      const res = await stopRecording();
+      const res = await recordingSessionRef.current?.stop();
+      if (!res) throw new Error('没有正在进行的录音');
       setPendingAudio({
         url: res.dataUrl,
         duration: res.duration,
@@ -104,17 +115,24 @@ export const RecordInputBar: React.FC = () => {
       setAudioErrorTip(err.message || '录音保存失败');
       setTimeout(() => setAudioErrorTip(null), 3000);
     } finally {
+      recordingSessionRef.current = null;
       setIsProcessingAudio(false);
     }
   };
 
   const handleCancelRecording = () => {
-    cancelRecording();
+    recordingSessionRef.current?.cancel();
+    recordingSessionRef.current = null;
     setIsRecording(false);
   };
 
   const handleRemovePendingAudio = () => {
     setPendingAudio(null);
+  };
+
+  const showImageTip = (message: string, tone: 'success' | 'warning') => {
+    setImgTip({ message, tone });
+    setTimeout(() => setImgTip(null), 3500);
   };
 
   // Handle image file selection
@@ -123,18 +141,23 @@ export const RecordInputBar: React.FC = () => {
     if (!files || files.length === 0) return;
 
     setIsProcessingImg(true);
-    setImgErrorTip(null);
+    setImgTip({ message: `正在处理 ${files.length} 张图片…`, tone: 'info' });
     try {
       const { compressed, error } = await processImageFiles(files, pendingImgs.length);
       if (compressed.length > 0) {
         setPendingImgs((prev) => [...prev, ...compressed].slice(0, MAX_NOTE_IMAGES));
-      }
-      if (error) {
-        setImgErrorTip(error);
-        setTimeout(() => setImgErrorTip(null), 2500);
+        showImageTip(
+          error
+            ? `已添加 ${compressed.length} 张图片；${error}`
+            : `已添加 ${compressed.length} 张图片，点击发送即可保存`,
+          error ? 'warning' : 'success'
+        );
+      } else {
+        showImageTip(error || '未能处理所选图片，请重试', 'warning');
       }
     } catch (err) {
       console.error('Failed to process image:', err);
+      showImageTip('图片处理失败，请重试', 'warning');
     } finally {
       setIsProcessingImg(false);
       // Reset input value so same files can be re-selected if desired
@@ -309,10 +332,18 @@ export const RecordInputBar: React.FC = () => {
         </div>
       )}
 
-      {/* 提示消息 */}
-      {(imgErrorTip || audioErrorTip) && (
-        <div className="text-[11px] text-amber-600 mb-1.5 px-1 animate-in fade-in">
-          {imgErrorTip || audioErrorTip}
+      {/* 图片处理与录音提示 */}
+      {(imgTip || audioErrorTip) && (
+        <div
+          className={`text-[11px] mb-1.5 px-1 animate-in fade-in ${
+            audioErrorTip || imgTip?.tone === 'warning'
+              ? 'text-amber-600'
+              : imgTip?.tone === 'success'
+                ? 'text-emerald-600'
+                : 'text-sky-600'
+          }`}
+        >
+          {audioErrorTip || imgTip?.message}
         </div>
       )}
 

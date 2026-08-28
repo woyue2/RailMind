@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { RecordItem, TagItem, ThreadItem, EnrichedRecordItem, HomeLink, AudioAttachment } from '../types';
-import { generateId } from '../utils/dateUtils';
+import { generateId, getLocalDateKey } from '../utils/dateUtils';
 import { pickRandomQuoteColor } from '../utils/quoteColors';
 import { createR2SyncService } from '../sync';
 import { loadR2Settings } from '../sync/credentials';
@@ -54,9 +54,11 @@ interface FlowState {
   ) => RecordItem;
   updateRecord: (
     id: string,
-    updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id' | 'imgs' | 'bg_color' | 'audio'>>
+    updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id' | 'imgs' | 'bg_color' | 'audio' | 'is_pinned' | 'pinned_at'>>
   ) => void;
   deleteRecord: (id: string) => void;
+  togglePinRecord: (id: string) => void;
+  unpinRecord: (id: string) => void;
 
   // Actions for Threads
   createThread: (title: string) => ThreadItem;
@@ -312,10 +314,10 @@ export const useFlowStore = create<FlowState>()(
           const target = get().records.find((r) => r.id === targetId);
           if (target) {
             const isCrossDayBranch =
-              !!parentId && !quoteId && target.created_at.split('T')[0] !== nowIso.split('T')[0];
+              !!parentId && !quoteId && getLocalDateKey(target.created_at) !== getLocalDateKey(nowIso);
             const needColor = !!quoteId || isCrossDayBranch;
             if (needColor && !target.quote_color) {
-              targetColorUpdate = { ...target, quote_color: pickRandomQuoteColor() };
+              targetColorUpdate = { ...target, quote_color: pickRandomQuoteColor(), updated_at: nowIso };
             }
           }
         }
@@ -324,6 +326,7 @@ export const useFlowStore = create<FlowState>()(
           id: generateId(),
           text: text.trim(),
           created_at: nowIso,
+          updated_at: nowIso,
           parent_id: parentId,
           tag_id: options.tag_id || null,
           thread_id: threadId,
@@ -355,6 +358,8 @@ export const useFlowStore = create<FlowState>()(
         });
 
         triggerAutoSync((sync) => sync?.pushRecord(newRecord));
+        const linkedThread = threadId ? get().threads.find((thread) => thread.id === threadId) : undefined;
+        if (linkedThread) triggerAutoSync((sync) => sync?.pushThread(linkedThread));
         if (targetColorUpdate) {
           triggerAutoSync((sync) => sync?.pushRecord(targetColorUpdate!));
         }
@@ -375,7 +380,7 @@ export const useFlowStore = create<FlowState>()(
           }
           const updatedRecords = state.records.map((r) => {
             if (r.id === id) {
-              updatedRecord = { ...r, ...updates };
+              updatedRecord = { ...r, ...updates, updated_at: nowIso };
               return updatedRecord;
             }
             return r;
@@ -389,14 +394,70 @@ export const useFlowStore = create<FlowState>()(
         if (updatedRecord) {
           triggerAutoSync((sync) => sync?.pushRecord(updatedRecord!));
         }
+        if (updates.thread_id) {
+          const linkedThread = get().threads.find((thread) => thread.id === updates.thread_id);
+          if (linkedThread) triggerAutoSync((sync) => sync?.pushThread(linkedThread));
+        }
       },
 
       deleteRecord: (id) => {
+        const removedIds = get().records
+          .filter((record) => record.id === id || record.parent_id === id)
+          .map((record) => record.id);
         set((state) => ({
-          records: state.records.filter((r) => r.id !== id && r.parent_id !== id),
+          records: state.records.filter((record) => !removedIds.includes(record.id)),
         }));
 
-        triggerAutoSync((sync) => sync?.deleteRecord(id));
+        removedIds.forEach((recordId) => triggerAutoSync((sync) => sync?.deleteRecord(recordId)));
+      },
+
+      togglePinRecord: (id) => {
+        const nowIso = new Date().toISOString();
+        let targetRecord: RecordItem | undefined;
+        set((state) => {
+          const updatedRecords = state.records.map((r) => {
+            if (r.id === id) {
+              const nextPinned = !r.is_pinned;
+              targetRecord = {
+                ...r,
+                is_pinned: nextPinned,
+                pinned_at: nextPinned ? nowIso : null,
+                updated_at: nowIso,
+              };
+              return targetRecord;
+            }
+            return r;
+          });
+          return { records: updatedRecords };
+        });
+
+        if (targetRecord) {
+          triggerAutoSync((sync) => sync?.pushRecord(targetRecord!));
+        }
+      },
+
+      unpinRecord: (id) => {
+        const nowIso = new Date().toISOString();
+        let targetRecord: RecordItem | undefined;
+        set((state) => {
+          const updatedRecords = state.records.map((r) => {
+            if (r.id === id) {
+              targetRecord = {
+                ...r,
+                is_pinned: false,
+                pinned_at: null,
+                updated_at: nowIso,
+              };
+              return targetRecord;
+            }
+            return r;
+          });
+          return { records: updatedRecords };
+        });
+
+        if (targetRecord) {
+          triggerAutoSync((sync) => sync?.pushRecord(targetRecord!));
+        }
       },
 
       createThread: (title) => {
@@ -462,10 +523,21 @@ export const useFlowStore = create<FlowState>()(
       },
 
       deleteTag: (id) => {
-        set((state) => ({
-          tags: state.tags.filter((t) => t.id !== id),
-          records: state.records.map((r) => (r.tag_id === id ? { ...r, tag_id: null } : r)),
-        }));
+        const nowIso = new Date().toISOString();
+        let updatedRecords: RecordItem[] = [];
+        set((state) => {
+          updatedRecords = state.records
+            .filter((record) => record.tag_id === id)
+            .map((record) => ({ ...record, tag_id: null, updated_at: nowIso }));
+          const updatedIds = new Set(updatedRecords.map((record) => record.id));
+          return {
+            tags: state.tags.filter((tag) => tag.id !== id),
+            records: state.records.map((record) =>
+              updatedIds.has(record.id) ? updatedRecords.find((updated) => updated.id === record.id)! : record
+            ),
+          };
+        });
+        updatedRecords.forEach((record) => triggerAutoSync((sync) => sync?.pushRecord(record)));
         triggerAutoSync((sync) => sync?.deleteTag(id));
       },
 
@@ -590,6 +662,17 @@ export const useFlowStore = create<FlowState>()(
       // v3 prevents previously persisted development fixtures from leaking
       // into a production APK after upgrading from the prototype build.
       name: 'flow-01-storage-v3',
+      version: 4,
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<FlowState>;
+        return {
+          ...state,
+          records: (state.records ?? []).map((record) => ({
+            ...record,
+            updated_at: record.updated_at ?? record.created_at,
+          })),
+        };
+      },
     }
   )
 );

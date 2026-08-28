@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { RecordItemRow } from './RecordItemRow';
 import { RecordInputBar } from './RecordInputBar';
+import { FloatingBubblePin } from '../../components/record/FloatingBubblePin';
 import { ThreadPickerModal } from '../../components/modals/ThreadPickerModal';
 import { TagPickerModal } from '../../components/modals/TagPickerModal';
 import { SettingsModal } from '../../components/modals/SettingsModal';
@@ -320,6 +321,9 @@ export const RecordView = () => {
           </button>
         </div>
       </div>
+
+      {/* 📌 Floating Draggable Bubble Pin Note (Top Position with bounce float) */}
+      <FloatingBubblePin />
 
       {/* 2. Continuous Multi-Day Timeline Stream (Past at Top -> Now at Bottom) */}
       <div

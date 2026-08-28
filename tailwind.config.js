@@ -33,6 +33,17 @@ export default {
           '"Microsoft YaHei"',
           'sans-serif',
         ],
+      },
+      animation: {
+        'bubble-float': 'bubbleFloat 5s cubic-bezier(0.34, 1.56, 0.64, 1) infinite',
+      },
+      keyframes: {
+        bubbleFloat: {
+          '0%, 100%': { transform: 'translateY(0px) translateX(0px) scale(1, 1) rotate(0deg)' },
+          '25%': { transform: 'translateY(-1.0px) translateX(0.0px) scale(1.0020, 0.9980) rotate(0deg)' },
+          '50%': { transform: 'translateY(-2px) translateX(0px) scale(0.9980, 1.0020) rotate(-0deg)' },
+          '75%': { transform: 'translateY(-0.6px) translateX(-0.0px) scale(1.0020, 0.9980) rotate(0deg)' },
+        }
       }
     },
   },

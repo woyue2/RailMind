@@ -1,4 +1,4 @@
-import { format, parseISO, differenceInDays, isSameDay } from 'date-fns';
+import { format, parseISO, differenceInDays, isSameDay, subDays } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
 export function formatTime(isoString: string): string {
@@ -18,6 +18,14 @@ export function formatDateLabel(isoString: string): string {
     return isToday ? `今天 ${dateStr}` : dateStr;
   } catch {
     return isoString;
+  }
+}
+
+export function getLocalDateKey(isoString: string): string {
+  try {
+    return format(parseISO(isoString), 'yyyy-MM-dd');
+  } catch {
+    return '';
   }
 }
 
@@ -43,7 +51,7 @@ export function getRelativeDayMeta(isoStringOrDate: string | Date): {
     }
 
     // Check Yesterday
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yesterday = subDays(now, 1);
     if (isSameDay(target, yesterday)) {
       return {
         label: `昨天 ${format(target, 'M月d日', { locale: zhCN })}`,
@@ -54,7 +62,7 @@ export function getRelativeDayMeta(isoStringOrDate: string | Date): {
     }
 
     // Check Before Yesterday
-    const beforeYesterday = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const beforeYesterday = subDays(now, 2);
     if (isSameDay(target, beforeYesterday)) {
       return {
         label: `前天 ${format(target, 'M月d日', { locale: zhCN })}`,

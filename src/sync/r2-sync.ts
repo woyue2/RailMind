@@ -137,7 +137,7 @@ export class R2SyncService {
         () => this.repository.getRecords(),
         (id) => this.repository.getRecord(id),
         (item) => this.repository.saveRecord(item),
-        (item) => item.created_at,
+        (item) => item.updated_at ?? item.created_at,
         report
       );
 

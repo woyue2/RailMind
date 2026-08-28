@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Square, X, Check, Loader2 } from 'lucide-react';
-import { startRecording, stopRecording, cancelRecording, formatTimerSeconds } from '../../utils/audioUtils';
+import { createRecordingSession, formatTimerSeconds, RecordingSession } from '../../utils/audioUtils';
 import { AudioAttachment } from '../../types';
 import { AudioPlayerPill } from '../common/AudioPlayerPill';
 
@@ -26,6 +26,7 @@ export const AudioRecorderModal: React.FC<AudioRecorderModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const timerRef = useRef<number | null>(null);
+  const recordingSessionRef = useRef<RecordingSession | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -35,7 +36,8 @@ export const AudioRecorderModal: React.FC<AudioRecorderModalProps> = ({
       setIsProcessing(false);
       setRecordSeconds(0);
     } else {
-      cancelRecording();
+      recordingSessionRef.current?.cancel();
+      recordingSessionRef.current = null;
       if (timerRef.current) clearInterval(timerRef.current);
     }
   }, [isOpen, initialAudio]);
@@ -64,12 +66,18 @@ export const AudioRecorderModal: React.FC<AudioRecorderModalProps> = ({
     };
   }, [isRecording]);
 
+  useEffect(() => () => {
+    recordingSessionRef.current?.dispose();
+  }, []);
+
   if (!isOpen) return null;
 
   const handleStartRecording = async () => {
     setErrorMsg(null);
     try {
-      await startRecording();
+      const session = createRecordingSession();
+      recordingSessionRef.current = session;
+      await session.start();
       setIsRecording(true);
     } catch (err: any) {
       setErrorMsg(err.message || '无法启动录音');
@@ -81,7 +89,8 @@ export const AudioRecorderModal: React.FC<AudioRecorderModalProps> = ({
     setIsProcessing(true);
     setIsRecording(false);
     try {
-      const res = await stopRecording();
+      const res = await recordingSessionRef.current?.stop();
+      if (!res) throw new Error('没有正在进行的录音');
       setAudioDraft({
         url: res.dataUrl,
         duration: res.duration,
@@ -90,12 +99,14 @@ export const AudioRecorderModal: React.FC<AudioRecorderModalProps> = ({
     } catch (err: any) {
       setErrorMsg(err.message || '录音保存失败');
     } finally {
+      recordingSessionRef.current = null;
       setIsProcessing(false);
     }
   };
 
   const handleCancel = () => {
-    cancelRecording();
+    recordingSessionRef.current?.cancel();
+    recordingSessionRef.current = null;
     setIsRecording(false);
     onClose();
   };

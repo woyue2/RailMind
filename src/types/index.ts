@@ -9,7 +9,8 @@ export interface AudioAttachment {
 export interface RecordItem {
   id: string;
   text: string;
-  created_at: string; // ISO 8601 string
+  created_at: string; // ISO 8601 创建时间（不可变）
+  updated_at?: string; // ISO 8601 最近修改时间（兼容旧数据可缺省）
   parent_id: string | null; // 结构分支关系 (父记录 ID)
   tag_id: string | null; // 事后手动打的标签 ID, 可选
   thread_id: string | null; // 手动关联的思维线 ID, 可选
@@ -18,6 +19,8 @@ export interface RecordItem {
   imgs?: string[]; // 附带的图片 Base64 数组 (最多 4 张)
   bg_color?: string | null; // 单条便签自定义背景色 (null/undefined 为默认无色)
   audio?: AudioAttachment | null; // 附带的语音录音便签
+  is_pinned?: boolean; // 是否置顶为浮动气泡便签
+  pinned_at?: string | null; // 置顶时间戳 (ISO 8601 string)
 }
 
 // Tag 标签数据模型

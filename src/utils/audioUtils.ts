@@ -1,181 +1,131 @@
-/**
- * Audio Recording and Utility Functions for RailMind Voice Memos
- */
+/** Audio recording utilities for RailMind voice memos. */
 
 export interface RecordingResult {
   dataUrl: string;
-  duration: number; // in seconds
+  duration: number;
   blob: Blob;
   format: string;
 }
 
-let activeMediaStream: MediaStream | null = null;
-let activeMediaRecorder: MediaRecorder | null = null;
-let recordedChunks: Blob[] = [];
-let recordingStartTime = 0;
+export interface RecordingSession {
+  start: () => Promise<void>;
+  stop: () => Promise<RecordingResult>;
+  cancel: () => void;
+  dispose: () => void;
+}
 
-/**
- * Format seconds into readable timestamp e.g. 0:15" or 1:04"
- */
+let activeSession: RecordingSession | null = null;
+
 export function formatAudioDuration(seconds: number): string {
   const safeSec = Math.max(0, Math.round(seconds));
-  const m = Math.floor(safeSec / 60);
-  const s = safeSec % 60;
-  return `${m}:${s < 10 ? '0' : ''}${s}"`;
+  return `${Math.floor(safeSec / 60)}:${String(safeSec % 60).padStart(2, '0')}"`;
 }
 
-/**
- * Format seconds into mm:ss format for recording timer e.g. 00:08
- */
 export function formatTimerSeconds(seconds: number): string {
   const safeSec = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(safeSec / 60);
-  const s = safeSec % 60;
-  return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  return `${String(Math.floor(safeSec / 60)).padStart(2, '0')}:${String(safeSec % 60).padStart(2, '0')}`;
 }
 
-/**
- * Detect supported audio MIME type for MediaRecorder
- */
 function getSupportedMimeType(): string {
-  if (typeof MediaRecorder === 'undefined') return 'audio/webm';
-  const types = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/mp4',
-    'audio/aac',
-    'audio/ogg;codecs=opus',
-  ];
-  for (const type of types) {
-    if (MediaRecorder.isTypeSupported(type)) {
-      return type;
-    }
-  }
-  return '';
+  const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/ogg;codecs=opus'];
+  return typeof MediaRecorder === 'undefined' ? '' : types.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
 }
 
-/**
- * Start native audio recording via getUserMedia & MediaRecorder
- */
-export async function startRecording(): Promise<void> {
-  // Clean up any existing recorder / stream first
-  cancelRecording();
+export function createRecordingSession(): RecordingSession {
+  let stream: MediaStream | null = null;
+  let recorder: MediaRecorder | null = null;
+  let chunks: Blob[] = [];
+  let startedAt = 0;
+  let disposed = false;
 
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    throw new Error('当前浏览器或环境不支持麦克风录音功能');
-  }
+  const cleanup = () => {
+    stream?.getTracks().forEach((track) => track.stop());
+    stream = null;
+    recorder = null;
+    chunks = [];
+    if (activeSession === session) activeSession = null;
+  };
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+  const session: RecordingSession = {
+    async start() {
+      if (disposed) throw new Error('录音会话已关闭');
+      if (activeSession && activeSession !== session) throw new Error('已有录音正在进行，请先完成或取消当前录音');
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('当前浏览器或环境不支持麦克风录音功能');
 
-    activeMediaStream = stream;
-    recordedChunks = [];
-    recordingStartTime = Date.now();
-
-    const mimeType = getSupportedMimeType();
-    const options = mimeType ? { mimeType } : undefined;
-
-    const recorder = new MediaRecorder(stream, options);
-    activeMediaRecorder = recorder;
-
-    recorder.ondataavailable = (event: BlobEvent) => {
-      if (event.data && event.data.size > 0) {
-        recordedChunks.push(event.data);
-      }
-    };
-
-    recorder.start(100); // collect 100ms chunks
-  } catch (err: any) {
-    cancelRecording();
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      throw new Error('未获取到麦克风权限，请在设置中允许访问麦克风');
-    }
-    if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-      throw new Error('未检测到可用的麦克风输入设备');
-    }
-    throw new Error(`录音初始化失败: ${err.message || err}`);
-  }
-}
-
-/**
- * Stop active recording and return Base64 Data URL, duration, and blob
- */
-export function stopRecording(): Promise<RecordingResult> {
-  return new Promise((resolve, reject) => {
-    if (!activeMediaRecorder || activeMediaRecorder.state === 'inactive') {
-      reject(new Error('没有正在进行的录音'));
-      return;
-    }
-
-    const durationSeconds = Math.max(1, Math.round((Date.now() - recordingStartTime) / 1000));
-    const mimeType = activeMediaRecorder.mimeType || 'audio/webm';
-
-    activeMediaRecorder.onstop = () => {
+      activeSession = session;
       try {
-        const audioBlob = new Blob(recordedChunks, { type: mimeType });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const dataUrl = reader.result as string;
-          resolve({
-            dataUrl,
-            duration: durationSeconds,
-            blob: audioBlob,
-            format: mimeType.includes('mp4') ? 'audio/mp4' : 'audio/webm',
-          });
+        const nextStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        if (disposed || activeSession !== session) {
+          nextStream.getTracks().forEach((track) => track.stop());
+          throw new Error('录音已取消');
+        }
+        stream = nextStream;
+        chunks = [];
+        startedAt = Date.now();
+        recorder = new MediaRecorder(stream, getSupportedMimeType() ? { mimeType: getSupportedMimeType() } : undefined);
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) chunks.push(event.data);
         };
-        reader.onerror = () => {
-          reject(new Error('录音文件读取转换失败'));
-        };
-        reader.readAsDataURL(audioBlob);
-      } catch (err) {
-        reject(err);
-      } finally {
-        cleanupTracks();
+        recorder.start(100);
+      } catch (error: any) {
+        cleanup();
+        if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+          throw new Error('未获取到麦克风权限，请在设置中允许访问麦克风');
+        }
+        if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+          throw new Error('未检测到可用的麦克风输入设备');
+        }
+        throw error instanceof Error ? error : new Error('录音初始化失败');
       }
-    };
+    },
 
-    activeMediaRecorder.onerror = (e: any) => {
-      cleanupTracks();
-      reject(new Error(`录音过程出错: ${e.error || '未知错误'}`));
-    };
+    stop() {
+      return new Promise((resolve, reject) => {
+        if (activeSession !== session || !recorder || recorder.state === 'inactive') {
+          reject(new Error('没有正在进行的录音'));
+          return;
+        }
+        const activeRecorder = recorder;
+        const duration = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+        const mimeType = activeRecorder.mimeType || 'audio/webm';
+        activeRecorder.onstop = () => {
+          const blob = new Blob(chunks, { type: mimeType });
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const dataUrl = reader.result as string;
+            cleanup();
+            resolve({ dataUrl, duration, blob, format: mimeType.includes('mp4') ? 'audio/mp4' : 'audio/webm' });
+          };
+          reader.onerror = () => {
+            cleanup();
+            reject(new Error('录音文件读取转换失败'));
+          };
+          reader.readAsDataURL(blob);
+        };
+        activeRecorder.onerror = () => {
+          cleanup();
+          reject(new Error('录音过程出错'));
+        };
+        try { activeRecorder.stop(); } catch (error) { cleanup(); reject(error); }
+      });
+    },
 
-    try {
-      activeMediaRecorder.stop();
-    } catch (err) {
-      cleanupTracks();
-      reject(err);
-    }
-  });
-}
+    cancel() {
+      if (activeSession !== session) return;
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.onstop = null;
+        try { recorder.stop(); } catch { /* ignore */ }
+      }
+      cleanup();
+    },
 
-/**
- * Cancel and discard current active recording
- */
-export function cancelRecording(): void {
-  if (activeMediaRecorder && activeMediaRecorder.state !== 'inactive') {
-    try {
-      activeMediaRecorder.stop();
-    } catch {
-      // ignore
-    }
-  }
-  cleanupTracks();
-}
+    dispose() {
+      disposed = true;
+      session.cancel();
+    },
+  };
 
-/**
- * Internal cleanup for active tracks and recorder instances
- */
-function cleanupTracks(): void {
-  if (activeMediaStream) {
-    activeMediaStream.getTracks().forEach((track) => track.stop());
-    activeMediaStream = null;
-  }
-  activeMediaRecorder = null;
-  recordedChunks = [];
+  return session;
 }
