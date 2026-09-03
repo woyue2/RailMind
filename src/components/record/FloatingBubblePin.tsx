@@ -72,10 +72,15 @@ export const FloatingBubblePin: React.FC = () => {
 
   useEffect(() => {
     const reclamp = () => setPos((previous) => (previous ? clampPosition(previous) : previous));
+    const resizeObserver = new ResizeObserver(reclamp);
+    document
+      .querySelectorAll<HTMLElement>('.record-header, .record-mode-bar, .record-input-bar')
+      .forEach((element) => resizeObserver.observe(element));
     window.addEventListener('resize', reclamp);
     window.addEventListener('orientationchange', reclamp);
     window.visualViewport?.addEventListener('resize', reclamp);
     return () => {
+      resizeObserver.disconnect();
       window.removeEventListener('resize', reclamp);
       window.removeEventListener('orientationchange', reclamp);
       window.visualViewport?.removeEventListener('resize', reclamp);
@@ -192,7 +197,7 @@ export const FloatingBubblePin: React.FC = () => {
               position: 'absolute',
             }
       }
-      className="z-10 pointer-events-auto touch-none cursor-grab active:cursor-grabbing select-none"
+      className="z-30 pointer-events-auto touch-none cursor-grab active:cursor-grabbing select-none"
     >
       {/* Gentle Floating & Bouncing Animation Container */}
       <div className="animate-bubble-float transition-shadow duration-300">
