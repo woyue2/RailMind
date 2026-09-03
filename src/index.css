@@ -33,6 +33,14 @@
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
 }
 
+.daily-page-scroller {
+  scrollbar-width: none;
+}
+
+.daily-page-scroller::-webkit-scrollbar {
+  display: none;
+}
+
 /* Custom subtle scrollbar */
 ::-webkit-scrollbar {
   width: 4px;

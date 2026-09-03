@@ -19,6 +19,10 @@ import {
   ArrowDown,
   Sparkles,
   Link,
+  List,
+  PanelsTopLeft,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
@@ -37,6 +41,8 @@ export const RecordView = () => {
   const tags = useFlowStore((s) => s.tags);
   const threads = useFlowStore((s) => s.threads);
   const selectedDate = useFlowStore((s) => s.selectedDate);
+  const recordViewMode = useFlowStore((s) => s.recordViewMode);
+  const setRecordViewMode = useFlowStore((s) => s.setRecordViewMode);
   const fromReviewDate = useFlowStore((s) => s.fromReviewDate);
   const fromThreadDetailId = useFlowStore((s) => s.fromThreadDetailId);
   const setActiveTab = useFlowStore((s) => s.setActiveTab);
@@ -54,7 +60,12 @@ export const RecordView = () => {
   // Scroll Container & Anchors
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomAnchorRef = useRef<HTMLDivElement>(null);
+  const pageScrollerRef = useRef<HTMLDivElement>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const todayDateKey = format(new Date(), 'yyyy-MM-dd');
+  const [visiblePageDate, setVisiblePageDate] = useState(selectedDate || todayDateKey);
+  const visiblePageDateRef = useRef(visiblePageDate);
+  const pageScrollFrameRef = useRef<number | null>(null);
   const prevRecordCountRef = useRef(records.length);
 
   // Modal State
@@ -120,6 +131,10 @@ export const RecordView = () => {
     });
 
     // 2. Sort dates in chronological ascending order (oldest date at Top -> newest/today at Bottom)
+    if (!map.has(todayDateKey)) {
+      map.set(todayDateKey, []);
+    }
+
     const sortedDateKeys = Array.from(map.keys()).sort(
       (a, b) => new Date(a).getTime() - new Date(b).getTime()
     );
@@ -161,7 +176,80 @@ export const RecordView = () => {
     });
 
     return groups;
-  }, [records, tags, threads]);
+  }, [records, tags, threads, todayDateKey]);
+
+  useEffect(() => {
+    visiblePageDateRef.current = visiblePageDate;
+  }, [visiblePageDate]);
+
+  const pageIndex = useMemo(
+    () => Math.max(0, dayGroups.findIndex((group) => group.dateKey === visiblePageDate)),
+    [dayGroups, visiblePageDate]
+  );
+
+  const scrollToPage = (index: number, behavior: ScrollBehavior = 'smooth') => {
+    const scroller = pageScrollerRef.current;
+    const safeIndex = Math.min(Math.max(index, 0), dayGroups.length - 1);
+    const target = dayGroups[safeIndex];
+    if (!scroller || !target) return;
+    setVisiblePageDate(target.dateKey);
+    scroller.scrollTo({ left: safeIndex * scroller.clientWidth, behavior });
+  };
+
+  const handlePageScroll = () => {
+    if (pageScrollFrameRef.current !== null) return;
+    pageScrollFrameRef.current = window.requestAnimationFrame(() => {
+      pageScrollFrameRef.current = null;
+      const scroller = pageScrollerRef.current;
+      if (!scroller || scroller.clientWidth === 0) return;
+      const index = Math.min(
+        dayGroups.length - 1,
+        Math.max(0, Math.round(scroller.scrollLeft / scroller.clientWidth))
+      );
+      const group = dayGroups[index];
+      if (group && group.dateKey !== visiblePageDateRef.current) {
+        setVisiblePageDate(group.dateKey);
+      }
+    });
+  };
+
+  useEffect(() => () => {
+    if (pageScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(pageScrollFrameRef.current);
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (recordViewMode !== 'daily-pages' || dayGroups.length === 0) return;
+
+    const requestedDate = selectedDate || visiblePageDateRef.current || todayDateKey;
+    let targetIndex = dayGroups.findIndex((group) => group.dateKey === requestedDate);
+    if (targetIndex < 0) {
+      targetIndex = dayGroups.reduce((closest, group, index) => {
+        const currentDistance = Math.abs(new Date(group.dateKey).getTime() - new Date(requestedDate).getTime());
+        const closestDistance = Math.abs(new Date(dayGroups[closest].dateKey).getTime() - new Date(requestedDate).getTime());
+        return currentDistance < closestDistance ? index : closest;
+      }, 0);
+    }
+
+    const target = dayGroups[targetIndex];
+    setVisiblePageDate(target.dateKey);
+    const frame = window.requestAnimationFrame(() => {
+      const scroller = pageScrollerRef.current;
+      if (scroller) {
+        scroller.scrollLeft = targetIndex * scroller.clientWidth;
+        visiblePageDateRef.current = target.dateKey;
+        setVisiblePageDate(target.dateKey);
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [recordViewMode, selectedDate, dayGroups, todayDateKey]);
+
+  useEffect(() => {
+    if (recordViewMode === 'daily-pages' && !selectedDate) {
+      setVisiblePageDate(todayDateKey);
+    }
+  }, [recordViewMode, selectedDate, todayDateKey]);
 
   // Total summary of today's records or active context
   const headerSummary = useMemo(() => {
@@ -173,28 +261,28 @@ export const RecordView = () => {
 
   // Initial mount: Anchor to bottom smoothly (Now / Latest record)
   useLayoutEffect(() => {
-    if (scrollContainerRef.current) {
+    if (recordViewMode === 'timeline' && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
-  }, []);
+  }, [recordViewMode]);
 
   // When a new record is added, smoothly scroll to bottom
   useEffect(() => {
-    if (records.length > prevRecordCountRef.current) {
+    if (recordViewMode === 'timeline' && records.length > prevRecordCountRef.current) {
       bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
     prevRecordCountRef.current = records.length;
-  }, [records.length]);
+  }, [records.length, recordViewMode]);
 
   // If navigated to a specific date from Review page, scroll to that date group
   useEffect(() => {
-    if (selectedDate && scrollContainerRef.current) {
+    if (recordViewMode === 'timeline' && selectedDate && scrollContainerRef.current) {
       const targetElement = document.getElementById(`day-group-${selectedDate}`);
       if (targetElement) {
         targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }
-  }, [selectedDate]);
+  }, [selectedDate, recordViewMode]);
 
   // Handle scroll events to detect when user has scrolled up away from bottom
   const handleScroll = () => {
@@ -235,6 +323,27 @@ export const RecordView = () => {
       updateRecord(targetRecordForTag.id, { tag_id: tagId });
     }
   };
+
+  const currentPage = dayGroups[pageIndex];
+  const previousPage = pageIndex > 0 ? dayGroups[pageIndex - 1] : null;
+  const nextPage = pageIndex < dayGroups.length - 1 ? dayGroups[pageIndex + 1] : null;
+  const isViewingHistoricalPage =
+    recordViewMode === 'daily-pages' && visiblePageDate !== todayDateKey;
+
+  const renderRecordTree = (group: DayGroup) => (
+    <div className="space-y-0.5 pl-1">
+      {group.roots.map((item) => (
+        <div key={item.id} className="border-b border-gray-100/70 last:border-b-0 pb-1 mb-1">
+          <RecordItemRow
+            item={item}
+            level={0}
+            onOpenThreadPicker={handleOpenThreadPicker}
+            onOpenTagPicker={handleOpenTagPicker}
+          />
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-full bg-white relative">
@@ -322,25 +431,81 @@ export const RecordView = () => {
         </div>
       </div>
 
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-white px-3 py-1.5">
+        <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[11px]" aria-label="记录页显示模式">
+          <button
+            type="button"
+            onClick={() => setRecordViewMode('timeline')}
+            aria-pressed={recordViewMode === 'timeline'}
+            className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors ${
+              recordViewMode === 'timeline' ? 'bg-white font-medium text-gray-900 shadow-xs' : 'text-gray-500'
+            }`}
+          >
+            <List className="h-3.5 w-3.5" />
+            时间流
+          </button>
+          <button
+            type="button"
+            onClick={() => setRecordViewMode('daily-pages')}
+            aria-pressed={recordViewMode === 'daily-pages'}
+            className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors ${
+              recordViewMode === 'daily-pages' ? 'bg-white font-medium text-gray-900 shadow-xs' : 'text-gray-500'
+            }`}
+          >
+            <PanelsTopLeft className="h-3.5 w-3.5" />
+            翻页
+          </button>
+        </div>
+
+        {recordViewMode === 'daily-pages' && currentPage && (
+          <div className="flex min-w-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => scrollToPage(pageIndex - 1)}
+              disabled={!previousPage}
+              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-25"
+              title={previousPage ? `上一页：${previousPage.label}` : '已经是最早一页'}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <div className="min-w-0 text-center leading-tight">
+              <div className="truncate text-[11px] font-semibold text-gray-800">{currentPage.label}</div>
+              <div className="truncate text-[9px] text-gray-400">
+                {previousPage ? `← ${previousPage.label}` : '最早'} · {pageIndex + 1}/{dayGroups.length} · {nextPage ? `${nextPage.label} →` : '最新'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => scrollToPage(pageIndex + 1)}
+              disabled={!nextPage}
+              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-25"
+              title={nextPage ? `下一页：${nextPage.label}` : '已经是最新一页'}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* 📌 Floating Draggable Bubble Pin Note (Top Position with bounce float) */}
       <FloatingBubblePin />
 
-      {/* 2. Continuous Multi-Day Timeline Stream (Past at Top -> Now at Bottom) */}
-      <div
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-2 py-2 relative scroll-smooth space-y-4"
-      >
-        {dayGroups.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center text-gray-400">
-            <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center mb-3 text-gray-300">
-              <Calendar className="w-6 h-6" />
+      {recordViewMode === 'timeline' ? (
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-2 py-2 relative scroll-smooth space-y-4"
+        >
+          {records.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center text-gray-400">
+              <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center mb-3 text-gray-300">
+                <Calendar className="w-6 h-6" />
+              </div>
+              <p className="text-sm font-medium text-gray-500">暂无任何记录</p>
+              <p className="text-xs text-gray-400 mt-1">在下方输入框写下此刻的想法，开启时间流</p>
             </div>
-            <p className="text-sm font-medium text-gray-500">暂无任何记录</p>
-            <p className="text-xs text-gray-400 mt-1">在下方输入框写下此刻的想法，开启时间流</p>
-          </div>
-        ) : (
-          dayGroups.map((group) => {
+          ) : (
+            dayGroups.map((group) => {
             const isTargetHighlight = selectedDate === group.dateKey;
 
             return (
@@ -375,30 +540,59 @@ export const RecordView = () => {
                   )}
                 </div>
 
-                {/* Day's Tree Stream */}
-                <div className="space-y-0.5 pl-1">
-                  {group.roots.map((item) => (
-                    <div key={item.id} className="border-b border-gray-100/70 last:border-b-0 pb-1 mb-1">
-                      <RecordItemRow
-                        item={item}
-                        level={0}
-                        onOpenThreadPicker={handleOpenThreadPicker}
-                        onOpenTagPicker={handleOpenTagPicker}
-                      />
-                    </div>
-                  ))}
-                </div>
+                {renderRecordTree(group)}
               </div>
             );
-          })
-        )}
+            })
+          )}
 
-        {/* Bottom invisible anchor to maintain positioning at Now */}
-        <div ref={bottomAnchorRef} className="h-2" />
-      </div>
+          <div ref={bottomAnchorRef} className="h-2" />
+        </div>
+      ) : (
+        <div
+          ref={pageScrollerRef}
+          onScroll={handlePageScroll}
+          className="daily-page-scroller flex flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth"
+          aria-label="按日期翻页浏览"
+        >
+          {dayGroups.map((group) => (
+            <section
+              key={group.dateKey}
+              className="h-full w-full flex-none snap-start overflow-y-auto px-2 py-2"
+              aria-label={`${group.label}，${group.count}条记录`}
+            >
+              <div className="min-h-full rounded-2xl bg-white">
+                <div className="sticky top-0 z-10 mb-2 flex items-center justify-between bg-white/90 px-1 py-1.5 backdrop-blur-md">
+                  <div className="flex items-center gap-1.5 rounded-full border border-amber-900/20 bg-amber-950/80 px-3 py-1 text-[11px] font-medium text-amber-50 shadow-xs">
+                    <Calendar className="h-3 w-3 text-amber-300" />
+                    <span>{group.label}</span>
+                    <span className="font-mono text-[10px] text-amber-200/70">({group.count}条)</span>
+                  </div>
+                  {group.isToday && (
+                    <div className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-700">
+                      <Sparkles className="h-2.5 w-2.5 text-amber-500" />
+                      此刻进行时
+                    </div>
+                  )}
+                </div>
+
+                {group.roots.length > 0 ? (
+                  renderRecordTree(group)
+                ) : (
+                  <div className="flex flex-col items-center justify-center px-6 py-20 text-center text-gray-400">
+                    <Calendar className="mb-3 h-8 w-8 text-gray-300" />
+                    <p className="text-sm font-medium text-gray-500">今天还没有记录</p>
+                    <p className="mt-1 text-xs">从下方写下此刻的第一个想法</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
 
       {/* Floating Action: Quick Scroll back to Bottom ("回到此刻 / Today") */}
-      {showScrollToBottom && (
+      {recordViewMode === 'timeline' && showScrollToBottom && (
         <div className="absolute right-4 bottom-24 z-30 transition-all duration-200 animate-in fade-in slide-in-from-bottom-2">
           <button
             onClick={scrollToBottom}
@@ -411,7 +605,7 @@ export const RecordView = () => {
       )}
 
       {/* 3. Bottom Sticky Input Bar (Recent Thread Capsules + Input + Send) */}
-      <RecordInputBar />
+      <RecordInputBar writesToToday={isViewingHistoricalPage} />
 
       {/* Modals */}
       <ThreadPickerModal

@@ -30,6 +30,7 @@ interface FlowState {
   activeTab: 'record' | 'review' | 'thread-detail' | 'widgets';
   selectedThreadId: string | null;
   selectedDate: string | null; // filter date in RecordView (null = default today)
+  recordViewMode: 'timeline' | 'daily-pages';
   fromReviewDate: boolean; // 是否从回顾页点击某日期跳转而来
   fromThreadDetailId: string | null; // 是否从思维线详情页点击某记录跳转而来
 
@@ -84,6 +85,7 @@ interface FlowState {
   setHighlightRecordId: (id: string | null) => void;
   setQuickSelectedThreadId: (id: string | null) => void;
   setSelectedDate: (date: string | null) => void;
+  setRecordViewMode: (mode: 'timeline' | 'daily-pages') => void;
   setHomeLink: (link: { shownName: string; href: string } | null) => void;
   resetToDefaultData: () => void;
 }
@@ -292,6 +294,7 @@ export const useFlowStore = create<FlowState>()(
       activeTab: 'record',
       selectedThreadId: null,
       selectedDate: null,
+      recordViewMode: 'timeline',
       fromReviewDate: false,
       fromThreadDetailId: null,
       activeBranchParentId: null,
@@ -637,6 +640,8 @@ export const useFlowStore = create<FlowState>()(
 
       setSelectedDate: (date) => set({ selectedDate: date }),
 
+      setRecordViewMode: (recordViewMode) => set({ recordViewMode }),
+
       setHomeLink: (homeLink) => {
         const nextLink = homeLink ? { ...homeLink, updatedAt: new Date().toISOString() } : null;
         set({ homeLink: nextLink });
@@ -667,6 +672,7 @@ export const useFlowStore = create<FlowState>()(
         const state = persistedState as Partial<FlowState>;
         return {
           ...state,
+          recordViewMode: state.recordViewMode ?? 'timeline',
           records: (state.records ?? []).map((record) => ({
             ...record,
             updated_at: record.updated_at ?? record.created_at,

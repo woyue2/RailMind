@@ -8,7 +8,11 @@ import { AudioPlayerPill } from '../../components/common/AudioPlayerPill';
 
 const MAX_RECORDING_SECONDS = 60;
 
-export const RecordInputBar: React.FC = () => {
+interface RecordInputBarProps {
+  writesToToday?: boolean;
+}
+
+export const RecordInputBar: React.FC<RecordInputBarProps> = ({ writesToToday = false }) => {
   const [inputText, setInputText] = useState('');
   const [pendingImgs, setPendingImgs] = useState<string[]>([]);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
@@ -201,6 +205,12 @@ export const RecordInputBar: React.FC = () => {
 
   return (
     <div className="record-input-bar border-t border-gray-100 bg-white/95 backdrop-blur-md px-3 pt-2 pb-3">
+      {writesToToday && (
+        <div className="mb-1.5 flex items-center justify-center gap-1 text-[10px] font-medium text-amber-700">
+          <Sparkles className="h-3 w-3" />
+          <span>正在浏览历史 · 新想法将记录到今天</span>
+        </div>
+      )}
       {/* 1. Branching State Alert (if active) */}
       {parentRecord && (
         <div className="mb-2 px-2.5 py-1.5 bg-amber-50/90 border border-amber-200/80 rounded-lg flex items-center justify-between text-xs text-amber-900 animate-in fade-in duration-150">
@@ -503,4 +513,3 @@ export const RecordInputBar: React.FC = () => {
     </div>
   );
 };
-
