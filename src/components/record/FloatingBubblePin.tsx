@@ -45,10 +45,15 @@ export const FloatingBubblePin: React.FC = () => {
     const parentWidth = parent?.clientWidth ?? window.innerWidth;
     const parentHeight = parent?.clientHeight ?? window.innerHeight;
     const header = document.querySelector<HTMLElement>('.record-header');
+    const modeBar = document.querySelector<HTMLElement>('.record-mode-bar');
     const inputBar = document.querySelector<HTMLElement>('.record-input-bar');
     const minX = 8;
     const maxX = Math.max(minX, parentWidth - bubble.offsetWidth - 8);
-    const minY = Math.max(8, (header?.getBoundingClientRect().bottom ?? parentRect.top) - parentRect.top + 8);
+    const controlsBottom = Math.max(
+      header?.getBoundingClientRect().bottom ?? parentRect.top,
+      modeBar?.getBoundingClientRect().bottom ?? parentRect.top
+    );
+    const minY = Math.max(8, controlsBottom - parentRect.top + 8);
     const bottomInset = inputBar
       ? Math.max(8, parentRect.bottom - inputBar.getBoundingClientRect().top + 8)
       : 8;

@@ -431,7 +431,7 @@ export const RecordView = () => {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-white px-3 py-1.5">
+      <div className="record-mode-bar relative z-20 flex flex-shrink-0 items-center justify-between gap-2 border-b border-gray-100 bg-white px-3 py-1.5">
         <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[11px]" aria-label="记录页显示模式">
           <button
             type="button"
