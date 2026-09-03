@@ -24,7 +24,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-import { parseISO, format } from 'date-fns';
+import { parseISO, format, subDays } from 'date-fns';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
 
 interface DayGroup {
@@ -63,9 +63,14 @@ export const RecordView = () => {
   const pageScrollerRef = useRef<HTMLDivElement>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const todayDateKey = format(new Date(), 'yyyy-MM-dd');
+  const yesterdayDateKey = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+  const weekAgoDateKey = format(subDays(new Date(), 7), 'yyyy-MM-dd');
+  const monthAgoDateKey = format(subDays(new Date(), 30), 'yyyy-MM-dd');
   const [visiblePageDate, setVisiblePageDate] = useState(selectedDate || todayDateKey);
+  const [customPageDate, setCustomPageDate] = useState<string | null>(null);
   const visiblePageDateRef = useRef(visiblePageDate);
   const pageScrollFrameRef = useRef<number | null>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const prevRecordCountRef = useRef(records.length);
 
   // Modal State
@@ -131,9 +136,12 @@ export const RecordView = () => {
     });
 
     // 2. Sort dates in chronological ascending order (oldest date at Top -> newest/today at Bottom)
-    if (!map.has(todayDateKey)) {
-      map.set(todayDateKey, []);
-    }
+    const requiredDateKeys = recordViewMode === 'daily-pages'
+      ? [todayDateKey, yesterdayDateKey, weekAgoDateKey, monthAgoDateKey, selectedDate, customPageDate]
+      : [todayDateKey];
+    requiredDateKeys.forEach((dateKey) => {
+      if (dateKey && !map.has(dateKey)) map.set(dateKey, []);
+    });
 
     const sortedDateKeys = Array.from(map.keys()).sort(
       (a, b) => new Date(a).getTime() - new Date(b).getTime()
@@ -176,7 +184,18 @@ export const RecordView = () => {
     });
 
     return groups;
-  }, [records, tags, threads, todayDateKey]);
+  }, [
+    records,
+    tags,
+    threads,
+    recordViewMode,
+    todayDateKey,
+    yesterdayDateKey,
+    weekAgoDateKey,
+    monthAgoDateKey,
+    selectedDate,
+    customPageDate,
+  ]);
 
   useEffect(() => {
     visiblePageDateRef.current = visiblePageDate;
@@ -194,6 +213,12 @@ export const RecordView = () => {
     if (!scroller || !target) return;
     setVisiblePageDate(target.dateKey);
     scroller.scrollTo({ left: safeIndex * scroller.clientWidth, behavior });
+  };
+
+  const jumpToDate = (dateKey: string) => {
+    setCustomPageDate(dateKey);
+    visiblePageDateRef.current = dateKey;
+    setVisiblePageDate(dateKey);
   };
 
   const handlePageScroll = () => {
@@ -327,6 +352,17 @@ export const RecordView = () => {
   const currentPage = dayGroups[pageIndex];
   const previousPage = pageIndex > 0 ? dayGroups[pageIndex - 1] : null;
   const nextPage = pageIndex < dayGroups.length - 1 ? dayGroups[pageIndex + 1] : null;
+  const previousRecordedPage = [...dayGroups]
+    .slice(0, pageIndex)
+    .reverse()
+    .find((group) => group.count > 0) ?? null;
+  const nextRecordedPage = dayGroups.slice(pageIndex + 1).find((group) => group.count > 0) ?? null;
+  const quickJumpTargets = [
+    { label: '今天', dateKey: todayDateKey },
+    { label: '昨天', dateKey: yesterdayDateKey },
+    { label: '7天前', dateKey: weekAgoDateKey },
+    { label: '30天前', dateKey: monthAgoDateKey },
+  ];
   const isViewingHistoricalPage =
     recordViewMode === 'daily-pages' && visiblePageDate !== todayDateKey;
 
@@ -487,6 +523,47 @@ export const RecordView = () => {
         )}
       </div>
 
+      {recordViewMode === 'daily-pages' && (
+        <div className="record-quick-jumps relative z-20 flex flex-shrink-0 items-center gap-1.5 overflow-x-auto border-b border-gray-100 bg-white px-3 py-1.5">
+          {quickJumpTargets.map((target) => {
+            const isActive = visiblePageDate === target.dateKey;
+            return (
+              <button
+                key={target.label}
+                type="button"
+                onClick={() => jumpToDate(target.dateKey)}
+                aria-pressed={isActive}
+                className={`flex-shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  isActive
+                    ? 'border-amber-400 bg-amber-50 text-amber-800'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {target.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => dateInputRef.current?.showPicker()}
+            className="flex flex-shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
+          >
+            <Calendar className="h-3 w-3" />
+            日历
+          </button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={customPageDate ?? ''}
+            onChange={(event) => {
+              if (event.target.value) jumpToDate(event.target.value);
+            }}
+            className="fixed -left-[9999px] h-px w-px opacity-0"
+            aria-label="选择要查看的日期"
+          />
+        </div>
+      )}
+
       {/* 📌 Floating Draggable Bubble Pin Note (Top Position with bounce float) */}
       <FloatingBubblePin />
 
@@ -581,8 +658,34 @@ export const RecordView = () => {
                 ) : (
                   <div className="flex flex-col items-center justify-center px-6 py-20 text-center text-gray-400">
                     <Calendar className="mb-3 h-8 w-8 text-gray-300" />
-                    <p className="text-sm font-medium text-gray-500">今天还没有记录</p>
-                    <p className="mt-1 text-xs">从下方写下此刻的第一个想法</p>
+                    <p className="text-sm font-medium text-gray-500">
+                      {group.isToday ? '今天还没有记录' : `${group.label}没有记录`}
+                    </p>
+                    <p className="mt-1 text-xs">
+                      {group.isToday ? '从下方写下此刻的第一个想法' : '可以查看前后最近有记录的日期'}
+                    </p>
+                    {!group.isToday && (previousRecordedPage || nextRecordedPage) && (
+                      <div className="mt-4 flex items-center gap-2">
+                        {previousRecordedPage && (
+                          <button
+                            type="button"
+                            onClick={() => jumpToDate(previousRecordedPage.dateKey)}
+                            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-medium text-gray-600 shadow-xs"
+                          >
+                            ← {previousRecordedPage.label}
+                          </button>
+                        )}
+                        {nextRecordedPage && (
+                          <button
+                            type="button"
+                            onClick={() => jumpToDate(nextRecordedPage.dateKey)}
+                            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-medium text-gray-600 shadow-xs"
+                          >
+                            {nextRecordedPage.label} →
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

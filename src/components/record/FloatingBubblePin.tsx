@@ -45,13 +45,13 @@ export const FloatingBubblePin: React.FC = () => {
     const parentWidth = parent?.clientWidth ?? window.innerWidth;
     const parentHeight = parent?.clientHeight ?? window.innerHeight;
     const header = document.querySelector<HTMLElement>('.record-header');
-    const modeBar = document.querySelector<HTMLElement>('.record-mode-bar');
+    const modeBars = document.querySelectorAll<HTMLElement>('.record-mode-bar, .record-quick-jumps');
     const inputBar = document.querySelector<HTMLElement>('.record-input-bar');
     const minX = 8;
     const maxX = Math.max(minX, parentWidth - bubble.offsetWidth - 8);
-    const controlsBottom = Math.max(
-      header?.getBoundingClientRect().bottom ?? parentRect.top,
-      modeBar?.getBoundingClientRect().bottom ?? parentRect.top
+    const controlsBottom = Array.from(modeBars).reduce(
+      (bottom, element) => Math.max(bottom, element.getBoundingClientRect().bottom),
+      header?.getBoundingClientRect().bottom ?? parentRect.top
     );
     const minY = Math.max(8, controlsBottom - parentRect.top + 8);
     const bottomInset = inputBar
@@ -74,7 +74,7 @@ export const FloatingBubblePin: React.FC = () => {
     const reclamp = () => setPos((previous) => (previous ? clampPosition(previous) : previous));
     const resizeObserver = new ResizeObserver(reclamp);
     document
-      .querySelectorAll<HTMLElement>('.record-header, .record-mode-bar, .record-input-bar')
+      .querySelectorAll<HTMLElement>('.record-header, .record-mode-bar, .record-quick-jumps, .record-input-bar')
       .forEach((element) => resizeObserver.observe(element));
     window.addEventListener('resize', reclamp);
     window.addEventListener('orientationchange', reclamp);
