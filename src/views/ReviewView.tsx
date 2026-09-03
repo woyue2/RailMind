@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { ChevronRight, ChevronDown, ArrowLeft, Tag, Calendar, Layers } from 'lucide-react';
 import { useFlowStore } from '../store/useFlowStore';
 import { formatShortDateTime } from '../utils/dateUtils';
 import { parseISO, format } from 'date-fns';
+import { buildWeeklyExport } from '../utils/weeklyExport';
+import { exportJsonFile } from '../utils/exportFile';
 
 export const ReviewView = () => {
   const records = useFlowStore((s) => s.records);
@@ -12,6 +14,33 @@ export const ReviewView = () => {
   const setActiveTab = useFlowStore((s) => s.setActiveTab);
   const openThreadDetail = useFlowStore((s) => s.openThreadDetail);
   const openDateRecord = useFlowStore((s) => s.openDateRecord);
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
+  const exportLock = useRef(false);
+
+  const handleExport = async () => {
+    if (exportLock.current) return;
+    exportLock.current = true;
+    setExporting(true);
+    setExportMessage('');
+    try {
+      const snapshot = useFlowStore.getState();
+      const { data, filename } = buildWeeklyExport(snapshot.records, snapshot.tags, snapshot.threads);
+      if (!data.records.length) {
+        setExportMessage('最近 7 天暂无记录，无需导出。');
+        return;
+      }
+      const count = `本周 ${data.records.length} 条，补充历史上下文 ${data.context_records.length} 条`;
+      setExportMessage(count);
+      const result = await exportJsonFile(filename, data);
+      setExportMessage(`${count}。${result === 'download' ? '已发起文件下载。' : result === 'shared' ? '已交给所选应用。' : '分享已关闭，未确认发送。'}`);
+    } catch (error) {
+      setExportMessage(`导出失败，请重试：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      exportLock.current = false;
+      setExporting(false);
+    }
+  };
 
   // Accordion open/close state for Tags
   const [expandedTagIds, setExpandedTagIds] = useState<Record<string, boolean>>({
@@ -82,6 +111,18 @@ export const ReviewView = () => {
       </div>
 
       <div className="p-4 space-y-5 pb-8">
+        <section className="rounded-xl border border-gray-200/80 bg-white p-4 space-y-2">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
+          >
+            {exporting ? '正在导出…' : '导出最近 7 天'}
+          </button>
+          <p className="text-xs text-gray-500">含今天，保留文字和关联上下文，不含图片和录音。JSON 文件可交给 AI 整理。</p>
+          <p role="status" aria-live="polite" className="text-xs text-gray-600 break-words">{exportMessage}</p>
+        </section>
         {/* Section 1: 按标签 (By Tag) - 首屏显示前4个，其余滚动侧边栏查看 */}
         <section className="space-y-1.5">
           <div className="flex items-center justify-between px-1 text-xs font-semibold text-gray-500 tracking-wide">
