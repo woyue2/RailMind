@@ -42,6 +42,8 @@ export const RecordView = () => {
   const threads = useFlowStore((s) => s.threads);
   const selectedDate = useFlowStore((s) => s.selectedDate);
   const recordViewMode = useFlowStore((s) => s.recordViewMode);
+  const timelineDateHeaderBackgroundOpacity = useFlowStore((s) => s.timelineDateHeaderBackgroundOpacity);
+  const dailyPageDateHeaderBackgroundOpacity = useFlowStore((s) => s.dailyPageDateHeaderBackgroundOpacity);
   const setRecordViewMode = useFlowStore((s) => s.setRecordViewMode);
   const fromReviewDate = useFlowStore((s) => s.fromReviewDate);
   const fromThreadDetailId = useFlowStore((s) => s.fromThreadDetailId);
@@ -70,6 +72,7 @@ export const RecordView = () => {
   const [customPageDate, setCustomPageDate] = useState<string | null>(null);
   const visiblePageDateRef = useRef(visiblePageDate);
   const pageScrollFrameRef = useRef<number | null>(null);
+  const pendingAnimatedPageJumpRef = useRef(false);
   const dateInputRef = useRef<HTMLInputElement>(null);
   const prevRecordCountRef = useRef(records.length);
 
@@ -216,6 +219,7 @@ export const RecordView = () => {
   };
 
   const jumpToDate = (dateKey: string) => {
+    pendingAnimatedPageJumpRef.current = true;
     setCustomPageDate(dateKey);
     visiblePageDateRef.current = dateKey;
     setVisiblePageDate(dateKey);
@@ -262,7 +266,11 @@ export const RecordView = () => {
     const frame = window.requestAnimationFrame(() => {
       const scroller = pageScrollerRef.current;
       if (scroller) {
-        scroller.scrollLeft = targetIndex * scroller.clientWidth;
+        scroller.scrollTo({
+          left: targetIndex * scroller.clientWidth,
+          behavior: pendingAnimatedPageJumpRef.current ? 'smooth' : 'auto',
+        });
+        pendingAnimatedPageJumpRef.current = false;
         visiblePageDateRef.current = target.dateKey;
         setVisiblePageDate(target.dateKey);
       }
@@ -467,13 +475,13 @@ export const RecordView = () => {
         </div>
       </div>
 
-      <div className="record-mode-bar relative z-20 flex flex-shrink-0 items-center justify-between gap-2 border-b border-gray-100 bg-white px-3 py-1.5">
-        <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[11px]" aria-label="记录页显示模式">
+      <div className="record-mode-bar relative z-20 flex min-h-11 flex-shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-3 py-1.5">
+        <div className="inline-flex h-9 w-[132px] flex-none rounded-lg bg-gray-100 p-0.5 text-[11px]" aria-label="记录页显示模式">
           <button
             type="button"
             onClick={() => setRecordViewMode('timeline')}
             aria-pressed={recordViewMode === 'timeline'}
-            className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors ${
+            className={`flex min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md transition-colors ${
               recordViewMode === 'timeline' ? 'bg-white font-medium text-gray-900 shadow-xs' : 'text-gray-500'
             }`}
           >
@@ -484,7 +492,7 @@ export const RecordView = () => {
             type="button"
             onClick={() => setRecordViewMode('daily-pages')}
             aria-pressed={recordViewMode === 'daily-pages'}
-            className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors ${
+            className={`flex min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md transition-colors ${
               recordViewMode === 'daily-pages' ? 'bg-white font-medium text-gray-900 shadow-xs' : 'text-gray-500'
             }`}
           >
@@ -494,17 +502,17 @@ export const RecordView = () => {
         </div>
 
         {recordViewMode === 'daily-pages' && currentPage && (
-          <div className="flex min-w-0 items-center gap-1">
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-1 overflow-hidden">
             <button
               type="button"
               onClick={() => scrollToPage(pageIndex - 1)}
               disabled={!previousPage}
-              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-25"
+              className="flex-none rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-25"
               title={previousPage ? `上一页：${previousPage.label}` : '已经是最早一页'}
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <div className="min-w-0 text-center leading-tight">
+            <div className="min-w-0 flex-1 text-center leading-tight">
               <div className="truncate text-[11px] font-semibold text-gray-800">{currentPage.label}</div>
               <div className="truncate text-[9px] text-gray-400">
                 {previousPage ? `← ${previousPage.label}` : '最早'} · {pageIndex + 1}/{dayGroups.length} · {nextPage ? `${nextPage.label} →` : '最新'}
@@ -514,7 +522,7 @@ export const RecordView = () => {
               type="button"
               onClick={() => scrollToPage(pageIndex + 1)}
               disabled={!nextPage}
-              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-25"
+              className="flex-none rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-25"
               title={nextPage ? `下一页：${nextPage.label}` : '已经是最新一页'}
             >
               <ChevronRight className="h-4 w-4" />
@@ -598,7 +606,7 @@ export const RecordView = () => {
                   <div
                     className="pointer-events-auto flex items-center gap-1.5 px-3 py-1 rounded-full backdrop-blur-md shadow-xs text-[11px] font-medium tracking-tight"
                     style={{
-                      backgroundColor: 'hsla(35, 55%, 20%, 0.70)',
+                      backgroundColor: `hsla(35, 55%, 20%, ${timelineDateHeaderBackgroundOpacity / 100})`,
                       borderColor: 'hsla(35, 55%, 40%, 0.30)',
                       borderWidth: '1px',
                       color: 'hsl(35, 20%, 95%)',
@@ -629,7 +637,7 @@ export const RecordView = () => {
         <div
           ref={pageScrollerRef}
           onScroll={handlePageScroll}
-          className="daily-page-scroller flex flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth"
+          className="daily-page-scroller flex flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain"
           aria-label="按日期翻页浏览"
         >
           {dayGroups.map((group) => (
@@ -640,7 +648,10 @@ export const RecordView = () => {
             >
               <div className="min-h-full rounded-2xl bg-white">
                 <div className="sticky top-0 z-10 mb-2 flex items-center justify-between bg-white/90 px-1 py-1.5 backdrop-blur-md">
-                  <div className="flex items-center gap-1.5 rounded-full border border-amber-900/20 bg-amber-950/80 px-3 py-1 text-[11px] font-medium text-amber-50 shadow-xs">
+                  <div
+                    className="flex items-center gap-1.5 rounded-full border border-amber-900/20 px-3 py-1 text-[11px] font-medium text-amber-50 shadow-xs"
+                    style={{ backgroundColor: `rgb(69 26 3 / ${dailyPageDateHeaderBackgroundOpacity / 100})` }}
+                  >
                     <Calendar className="h-3 w-3 text-amber-300" />
                     <span>{group.label}</span>
                     <span className="font-mono text-[10px] text-amber-200/70">({group.count}条)</span>

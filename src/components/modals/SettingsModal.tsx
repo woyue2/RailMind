@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Cloud, CheckCircle, AlertCircle, RefreshCw, X, Shield, HardDrive } from 'lucide-react';
+import { Settings, CheckCircle, AlertCircle, RefreshCw, X, Shield, HardDrive } from 'lucide-react';
+import { useFlowStore } from '../../store/useFlowStore';
 import {
   loadR2Settings,
   saveR2Settings,
@@ -15,6 +16,10 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+  const timelineDateHeaderBackgroundOpacity = useFlowStore((state) => state.timelineDateHeaderBackgroundOpacity);
+  const dailyPageDateHeaderBackgroundOpacity = useFlowStore((state) => state.dailyPageDateHeaderBackgroundOpacity);
+  const setTimelineDateHeaderBackgroundOpacity = useFlowStore((state) => state.setTimelineDateHeaderBackgroundOpacity);
+  const setDailyPageDateHeaderBackgroundOpacity = useFlowStore((state) => state.setDailyPageDateHeaderBackgroundOpacity);
   const [settings, setSettings] = useState<R2Config>(defaultR2Config);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -89,11 +94,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-white sticky top-0 z-10">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Cloud className="w-4 h-4" />
+              <Settings className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-gray-900">云端存储与同步设置</h3>
-              <p className="text-[11px] text-gray-400">Cloudflare R2 直连备份与跨端同步</p>
+              <h3 className="text-base font-semibold text-gray-900">设置</h3>
+              <p className="text-[11px] text-gray-400">显示与云端同步</p>
             </div>
           </div>
           <button
@@ -106,6 +111,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
         {/* Content Body */}
         <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+          <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/80 p-3.5">
+            <div>
+              <div className="text-[13px] font-semibold text-gray-900">日期标题背景透明度</div>
+              <div className="mt-0.5 text-[11px] text-gray-400">两个浏览模式单独设置，调整后立即生效</div>
+            </div>
+            {[
+              {
+                label: '时间流',
+                value: timelineDateHeaderBackgroundOpacity,
+                setValue: setTimelineDateHeaderBackgroundOpacity,
+              },
+              {
+                label: '翻页',
+                value: dailyPageDateHeaderBackgroundOpacity,
+                setValue: setDailyPageDateHeaderBackgroundOpacity,
+              },
+            ].map((option) => (
+              <div key={option.label}>
+                <div className="mb-1 flex items-center justify-between text-[11px]">
+                  <span className="font-medium text-gray-600">{option.label}</span>
+                  <span className="min-w-10 text-right font-mono font-medium text-amber-800">{option.value}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={option.value}
+                  onChange={(event) => option.setValue(Number(event.target.value))}
+                  className="h-2 w-full cursor-pointer accent-amber-700"
+                  aria-label={`${option.label}日期标题背景透明度`}
+                />
+              </div>
+            ))}
+            <div className="flex justify-between text-[10px] text-gray-400">
+              <span>透明</span>
+              <span>不透明</span>
+            </div>
+          </div>
+
           {/* Toggle Enable */}
           <div className="flex items-center justify-between p-3.5 bg-gray-50/80 rounded-xl border border-gray-100">
             <div>

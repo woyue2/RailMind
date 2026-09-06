@@ -4,6 +4,8 @@ import {
   SyncReport,
   SyncTombstone,
   FlowRepositoryLike,
+  SyncOptions,
+  SyncProgressStatus,
 } from './types';
 import { saveTombstoneRecord } from './credentials';
 
@@ -16,20 +18,36 @@ function enqueue<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
-async function mapWithConcurrency<T>(
+export async function mapConcurrent<T, R = void>(
   items: T[],
-  worker: (item: T) => Promise<void>
-): Promise<void> {
-  let nextIndex = 0;
-  async function run(): Promise<void> {
-    while (nextIndex < items.length) {
-      const item = items[nextIndex++];
-      if (item !== undefined) await worker(item);
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+  onProgress?: (completed: number, total: number, item: T) => void
+): Promise<R[]> {
+  if (!items || !items.length) return [];
+  const results = new Array<R>(items.length);
+  let currentIndex = 0;
+  let completed = 0;
+
+  async function worker() {
+    while (currentIndex < items.length) {
+      const idx = currentIndex++;
+      try {
+        results[idx] = await fn(items[idx], idx);
+      } catch (err) {
+        results[idx] = { error: err } as unknown as R;
+      }
+      completed++;
+      if (typeof onProgress === 'function') {
+        onProgress(completed, items.length, items[idx]);
+      }
     }
   }
-  await Promise.all(
-    Array.from({ length: Math.min(SYNC_CONCURRENCY, items.length) }, () => run())
-  );
+
+  const workerCount = Math.min(Math.max(1, limit), items.length);
+  const workers = Array.from({ length: workerCount }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 export class R2SyncService {
@@ -69,9 +87,11 @@ export class R2SyncService {
   }
 
   pushHomeLink(link: HomeLink | null): Promise<void> {
-    return enqueue(() => link
-      ? this.client.putJson('settings/home-link.json', link)
-      : this.client.delete('settings/home-link.json'));
+    return enqueue(() =>
+      link
+        ? this.client.putJson('settings/home-link.json', link)
+        : this.client.delete('settings/home-link.json')
+    );
   }
 
   deleteRecord(id: string): Promise<void> {
@@ -86,14 +106,14 @@ export class R2SyncService {
     return enqueue(() => this.deleteEntity('tag', id));
   }
 
-  sync(): Promise<SyncReport> {
-    return enqueue(() => this.runSync());
+  sync(options?: SyncOptions): Promise<SyncReport> {
+    return enqueue(() => this.runSync(options));
   }
 
   private isDeleted(entityType: SyncTombstone['entityType'], entityId: string): boolean {
-    return this.repository.getTombstones().some(
-      (item) => item.entityType === entityType && item.entityId === entityId
-    );
+    return this.repository
+      .getTombstones()
+      .some((item) => item.entityType === entityType && item.entityId === entityId);
   }
 
   private tombstoneFor(
@@ -124,11 +144,32 @@ export class R2SyncService {
     await this.client.delete(`${prefix}/${id}.json`);
   }
 
-  private async runSync(): Promise<SyncReport> {
+  private async runSync(options?: SyncOptions): Promise<SyncReport> {
     const report: SyncReport = { pulled: 0, pushed: 0, errors: [] };
+    const reportProgress = (status: SyncProgressStatus) => {
+      try {
+        options?.onProgress?.(status);
+      } catch {
+        // ignore callback error
+      }
+    };
+
     try {
       // 1. 同步墓碑
-      await this.syncTombstones(report);
+      reportProgress({
+        stage: 'tombstones',
+        message: '正在检查并同步删除标记...',
+        current: 0,
+        total: 1,
+      });
+      await this.syncTombstones(report, (completed, total) => {
+        reportProgress({
+          stage: 'tombstones',
+          message: `正在同步删除标记 (${completed}/${total})...`,
+          current: completed,
+          total,
+        });
+      });
 
       // 2. 同步 Records
       await this.syncEntities<RecordItem>(
@@ -138,7 +179,8 @@ export class R2SyncService {
         (id) => this.repository.getRecord(id),
         (item) => this.repository.saveRecord(item),
         (item) => item.updated_at ?? item.created_at,
-        report
+        report,
+        reportProgress
       );
 
       // 3. 同步 Threads
@@ -149,7 +191,8 @@ export class R2SyncService {
         (id) => this.repository.getThread(id),
         (item) => this.repository.saveThread(item),
         (item) => item.last_used_at || item.created_at,
-        report
+        report,
+        reportProgress
       );
 
       // 4. 同步 Tags
@@ -160,60 +203,126 @@ export class R2SyncService {
         (id) => this.repository.getTag(id),
         (item) => this.repository.saveTag(item),
         () => '1970-01-01T00:00:00.000Z',
-        report
+        report,
+        reportProgress
       );
 
-      const remoteLinkItem = (await this.client.list('settings/')).find((item) => item.key === 'settings/home-link.json');
-      const remoteLink = remoteLinkItem ? await this.client.getJson<HomeLink>(remoteLinkItem.key) : undefined;
+      // 5. 同步设置
+      reportProgress({
+        stage: 'settings',
+        message: '正在同步设置与快捷配置...',
+        current: 0,
+        total: 1,
+      });
+      const remoteLinkItem = (await this.client.list('settings/')).find(
+        (item) => item.key === 'settings/home-link.json'
+      );
+      const remoteLink = remoteLinkItem
+        ? await this.client.getJson<HomeLink>(remoteLinkItem.key)
+        : undefined;
       const localLink = this.repository.getHomeLink();
-      if (remoteLink && (!localLink || new Date(remoteLink.updatedAt).getTime() > new Date(localLink.updatedAt).getTime())) {
+      if (
+        remoteLink &&
+        (!localLink ||
+          new Date(remoteLink.updatedAt).getTime() > new Date(localLink.updatedAt).getTime())
+      ) {
         this.repository.saveHomeLink(remoteLink);
         report.pulled++;
-      } else if (localLink && (!remoteLinkItem || new Date(localLink.updatedAt).getTime() > remoteLinkItem.lastModified.getTime())) {
+      } else if (
+        localLink &&
+        (!remoteLinkItem ||
+          new Date(localLink.updatedAt).getTime() > remoteLinkItem.lastModified.getTime())
+      ) {
         await this.client.putJson('settings/home-link.json', localLink);
         report.pushed++;
       }
+
+      reportProgress({
+        stage: 'done',
+        message: '云端同步完成',
+        current: 1,
+        total: 1,
+      });
     } catch (error) {
-      report.errors.push(error instanceof Error ? error.message : String(error));
+      const msg = error instanceof Error ? error.message : String(error);
+      report.errors.push(msg);
+      reportProgress({
+        stage: 'error',
+        message: `同步异常: ${msg}`,
+        current: 0,
+        total: 0,
+      });
     }
     return report;
   }
 
-  private async syncTombstones(report: SyncReport): Promise<void> {
-    // 上传本地墓碑
-    for (const tombstone of this.repository.getTombstones()) {
-      await this.client
-        .putJson(`tombstones/${tombstone.entityType}/${tombstone.entityId}.json`, tombstone)
-        .catch(() => undefined);
-    }
+  private async syncTombstones(
+    report: SyncReport,
+    onProgress?: (completed: number, total: number) => void
+  ): Promise<void> {
+    const localTombstones = this.repository.getTombstones();
+    const remoteList = await this.client.list('tombstones/');
+    const validRemoteItems = remoteList.filter((item) =>
+      /^tombstones\/(record|thread|tag)\/[^/]+\.json$/.test(item.key)
+    );
 
-    // 拉取远端墓碑
-    for (const item of await this.client.list('tombstones/')) {
-      if (!/^tombstones\/(record|thread|tag)\/[^/]+\.json$/.test(item.key)) continue;
-      const tombstone = await this.client.getJson<SyncTombstone>(item.key);
-      if (!tombstone) continue;
-      this.repository.saveTombstone(tombstone);
-      saveTombstoneRecord(tombstone);
+    const totalOps = localTombstones.length + validRemoteItems.length;
+    let completedOps = 0;
 
-      let removed = false;
-      if (tombstone.entityType === 'record') {
-        removed = this.repository.deleteRecord(tombstone.entityId);
-      } else if (tombstone.entityType === 'thread') {
-        removed = this.repository.deleteThread(tombstone.entityId);
-      } else if (tombstone.entityType === 'tag') {
-        removed = this.repository.deleteTag(tombstone.entityId);
+    const tick = () => {
+      completedOps++;
+      if (onProgress && totalOps > 0) {
+        onProgress(completedOps, totalOps);
       }
+    };
 
-      if (removed) report.pulled++;
+    // 1. 并发上传本地墓碑（受控并发池）
+    await mapConcurrent(
+      localTombstones,
+      SYNC_CONCURRENCY,
+      async (tombstone) => {
+        await this.client
+          .putJson(
+            `tombstones/${tombstone.entityType}/${tombstone.entityId}.json`,
+            tombstone
+          )
+          .catch(() => undefined);
+      },
+      tick
+    );
 
-      const prefix =
-        tombstone.entityType === 'record'
-          ? 'records'
-          : tombstone.entityType === 'thread'
-          ? 'threads'
-          : 'tags';
-      await this.client.delete(`${prefix}/${tombstone.entityId}.json`).catch(() => undefined);
-    }
+    // 2. 并发拉取远端墓碑并执行本地清理（受控并发池）
+    await mapConcurrent(
+      validRemoteItems,
+      SYNC_CONCURRENCY,
+      async (item) => {
+        const tombstone = await this.client.getJson<SyncTombstone>(item.key);
+        if (!tombstone) return;
+
+        this.repository.saveTombstone(tombstone);
+        saveTombstoneRecord(tombstone);
+
+        let removed = false;
+        if (tombstone.entityType === 'record') {
+          removed = this.repository.deleteRecord(tombstone.entityId);
+        } else if (tombstone.entityType === 'thread') {
+          removed = this.repository.deleteThread(tombstone.entityId);
+        } else if (tombstone.entityType === 'tag') {
+          removed = this.repository.deleteTag(tombstone.entityId);
+        }
+
+        if (removed) report.pulled++;
+
+        const prefix =
+          tombstone.entityType === 'record'
+            ? 'records'
+            : tombstone.entityType === 'thread'
+            ? 'threads'
+            : 'tags';
+        await this.client.delete(`${prefix}/${tombstone.entityId}.json`).catch(() => undefined);
+      },
+      tick
+    );
   }
 
   private async syncEntities<T extends { id: string }>(
@@ -223,8 +332,19 @@ export class R2SyncService {
     findLocal: (id: string) => T | undefined,
     saveLocal: (item: T) => void,
     getTimeStamp: (item: T) => string,
-    report: SyncReport
+    report: SyncReport,
+    reportProgress: (status: SyncProgressStatus) => void
   ): Promise<void> {
+    const entityLabel =
+      entityType === 'record' ? '便签记录' : entityType === 'thread' ? '思维线' : '标签';
+
+    reportProgress({
+      stage: entityType === 'record' ? 'records' : entityType === 'thread' ? 'threads' : 'tags',
+      message: `正在获取云端 ${entityLabel} 列表...`,
+      current: 0,
+      total: 0,
+    });
+
     const [remoteList, locals] = await Promise.all([
       this.client.list(prefix),
       Promise.resolve(listLocal()),
@@ -236,54 +356,84 @@ export class R2SyncService {
         .map((item) => [item.key.slice(prefix.length, -5), item])
     );
 
-    // 拉取远端新增或更新的对象
-    await mapWithConcurrency([...remoteMap], async ([id, remoteItem]) => {
-      if (this.isDeleted(entityType, id)) return;
-      try {
-        const remote = await this.client.getJson<T>(remoteItem.key);
-        if (!remote) return;
-        const local = findLocal(id);
-        if (!this.isDeleted(entityType, id)) {
-          if (!local) {
-            saveLocal(remote);
-            report.pulled++;
-          } else {
-            const localTime = new Date(getTimeStamp(local)).getTime();
-            const remoteTime = remoteItem.lastModified.getTime();
-            if (remoteTime > localTime) {
+    const remoteEntries = [...remoteMap];
+    const localEntries = [...localMap];
+    const totalEntityTasks = remoteEntries.length + localEntries.length;
+    let finishedEntityTasks = 0;
+
+    const onTaskStep = () => {
+      reportProgress({
+        stage: entityType === 'record' ? 'records' : entityType === 'thread' ? 'threads' : 'tags',
+        message: `正在同步 ${entityLabel} (${finishedEntityTasks}/${totalEntityTasks})...`,
+        current: finishedEntityTasks,
+        total: Math.max(totalEntityTasks, 1),
+      });
+    };
+
+    // 拉取远端新增或更新的对象（受控并发池）
+    await mapConcurrent(
+      remoteEntries,
+      SYNC_CONCURRENCY,
+      async ([id, remoteItem]) => {
+        if (this.isDeleted(entityType, id)) return;
+        try {
+          const remote = await this.client.getJson<T>(remoteItem.key);
+          if (!remote) return;
+          const local = findLocal(id);
+          if (!this.isDeleted(entityType, id)) {
+            if (!local) {
               saveLocal(remote);
               report.pulled++;
+            } else {
+              const localTime = new Date(getTimeStamp(local)).getTime();
+              const remoteTime = remoteItem.lastModified.getTime();
+              if (remoteTime > localTime) {
+                saveLocal(remote);
+                report.pulled++;
+              }
             }
           }
-        }
-      } catch (error) {
-        report.errors.push(
-          `拉取 ${entityType} ${id} 失败：${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      }
-    });
-
-    // 推送本地新增或更新的对象
-    await mapWithConcurrency([...localMap], async ([id]) => {
-      const local = findLocal(id);
-      if (!local || this.isDeleted(entityType, id)) return;
-      const remote = remoteMap.get(id);
-      const localTime = new Date(getTimeStamp(local)).getTime();
-
-      if (!remote || localTime > remote.lastModified.getTime()) {
-        try {
-          await this.client.putJson(`${prefix}${id}.json`, local);
-          report.pushed++;
         } catch (error) {
           report.errors.push(
-            `推送 ${entityType} ${id} 失败：${
+            `拉取 ${entityType} ${id} 失败：${
               error instanceof Error ? error.message : String(error)
             }`
           );
         }
+      },
+      () => {
+        finishedEntityTasks++;
+        onTaskStep();
       }
-    });
+    );
+
+    // 推送本地新增或更新的对象（受控并发池）
+    await mapConcurrent(
+      localEntries,
+      SYNC_CONCURRENCY,
+      async ([id]) => {
+        const local = findLocal(id);
+        if (!local || this.isDeleted(entityType, id)) return;
+        const remote = remoteMap.get(id);
+        const localTime = new Date(getTimeStamp(local)).getTime();
+
+        if (!remote || localTime > remote.lastModified.getTime()) {
+          try {
+            await this.client.putJson(`${prefix}${id}.json`, local);
+            report.pushed++;
+          } catch (error) {
+            report.errors.push(
+              `推送 ${entityType} ${id} 失败：${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
+          }
+        }
+      },
+      () => {
+        finishedEntityTasks++;
+        onTaskStep();
+      }
+    );
   }
 }

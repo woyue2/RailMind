@@ -1,7 +1,13 @@
 import { useFlowStore } from '../store/useFlowStore';
 import { R2Client } from './r2-client';
 import { R2SyncService } from './r2-sync';
-import { FlowRepositoryLike, SyncTombstone, SyncReport } from './types';
+import {
+  FlowRepositoryLike,
+  SyncTombstone,
+  SyncReport,
+  SyncOptions,
+  SyncProgressStatus,
+} from './types';
 import { isR2Configured, loadR2Settings, loadTombstones, saveTombstoneRecord } from './credentials';
 import { RecordItem, TagItem, ThreadItem, HomeLink } from '../types';
 
@@ -92,10 +98,75 @@ export function createR2SyncService(): R2SyncService | null {
   }
 }
 
-export async function triggerR2Sync(): Promise<SyncReport | null> {
+/**
+ * 判断本地是否为空数据（用于冷启动差异化体验）：
+ * 当本地记录、思维线、标签均为空时，视为初次安装或新设备冷启动。
+ */
+export function isLocalEmpty(): boolean {
+  const state = useFlowStore.getState();
+  return (
+    (!state.records || state.records.length === 0) &&
+    (!state.threads || state.threads.length === 0) &&
+    (!state.tags || state.tags.length === 0)
+  );
+}
+
+export type SyncProgressSubscriber = (status: SyncProgressStatus | null, showOverlay: boolean) => void;
+const syncSubscribers = new Set<SyncProgressSubscriber>();
+
+export function subscribeSyncProgress(subscriber: SyncProgressSubscriber): () => void {
+  syncSubscribers.add(subscriber);
+  return () => {
+    syncSubscribers.delete(subscriber);
+  };
+}
+
+function notifySyncProgress(status: SyncProgressStatus | null, showOverlay: boolean) {
+  for (const sub of syncSubscribers) {
+    try {
+      sub(status, showOverlay);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export async function triggerR2Sync(options: SyncOptions = {}): Promise<SyncReport | null> {
   const syncService = createR2SyncService();
   if (!syncService) return null;
-  return syncService.sync();
+
+  // 门控逻辑：仅在初次冷启动新设备（本地为空）或用户主动手动点击时展示全屏毛玻璃遮罩；日常自动同步静默运行
+  const showOverlay = Boolean(isLocalEmpty() || options.manual);
+  if (showOverlay) {
+    notifySyncProgress(
+      {
+        stage: 'idle',
+        message: isLocalEmpty() ? '检测到新设备，正在初始化拉取云端数据...' : '正在准备同步...',
+        current: 0,
+        total: 1,
+      },
+      true
+    );
+  }
+
+  try {
+    const report = await syncService.sync({
+      ...options,
+      onProgress: (status) => {
+        options.onProgress?.(status);
+        if (showOverlay) {
+          notifySyncProgress(status, true);
+        }
+      },
+    });
+    return report;
+  } finally {
+    if (showOverlay) {
+      setTimeout(() => {
+        notifySyncProgress(null, false);
+      }, 750);
+    }
+  }
 }
 
 export async function testR2Connection(): Promise<{ ok: boolean; message: string }> {

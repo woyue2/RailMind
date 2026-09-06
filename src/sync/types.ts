@@ -22,6 +22,28 @@ export interface SyncTombstone {
   deletedAt: string;
 }
 
+export type SyncStage =
+  | 'idle'
+  | 'tombstones'
+  | 'records'
+  | 'threads'
+  | 'tags'
+  | 'settings'
+  | 'done'
+  | 'error';
+
+export interface SyncProgressStatus {
+  stage: SyncStage;
+  message: string;
+  current: number;
+  total: number;
+}
+
+export interface SyncOptions {
+  manual?: boolean;
+  onProgress?: (status: SyncProgressStatus) => void;
+}
+
 export interface R2ClientLike {
   putJson(key: string, data: unknown): Promise<void>;
   getJson<T>(key: string): Promise<T | undefined>;

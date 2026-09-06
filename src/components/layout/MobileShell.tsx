@@ -4,6 +4,9 @@ import { RecordView } from '../../views/record/RecordView';
 import { ReviewView } from '../../views/ReviewView';
 import { ThreadDetailView } from '../../views/ThreadDetailView';
 import { WidgetSimulatorView } from '../../views/WidgetSimulatorView';
+import { SyncProgressOverlay } from '../common/SyncProgressOverlay';
+import { isR2Configured, loadR2Settings } from '../../sync/credentials';
+import { triggerR2Sync } from '../../sync';
 import {
   Smartphone,
   Maximize2,
@@ -35,6 +38,16 @@ export const MobileShell = () => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // 差异化静默同步 vs 冷启动拉取逻辑
+  useEffect(() => {
+    if (isR2Configured() && loadR2Settings().enabled) {
+      // triggerR2Sync 内部会通过 isLocalEmpty() 自动决策：
+      // - 若本地为空（冷启动/新设备），自动触发遮罩显示拉取进度
+      // - 若本地已有数据，则纯后台静默同步，无弹窗不打扰日常使用
+      triggerR2Sync({ manual: false }).catch(() => {});
+    }
+  }, []);
+
   const handleClearAllData = () => {
     if (window.confirm('确定要清空所有数据（包括 Mock 数据与历史记录），开启纯净空白模式吗？')) {
       useFlowStore.setState({
@@ -51,7 +64,8 @@ export const MobileShell = () => {
   // 如果是在手机屏幕/移动端真机打开，直接渲染 100% 全屏原生 App 容器
   if (isMobileScreen) {
     return (
-      <div className="mobile-app-shell w-full h-dvh bg-white flex flex-col overflow-hidden select-none">
+      <div className="mobile-app-shell w-full h-dvh bg-white flex flex-col overflow-hidden select-none relative">
+        <SyncProgressOverlay />
         <div className="flex-1 overflow-hidden relative flex flex-col">
           {activeTab === 'record' && <RecordView />}
           {activeTab === 'review' && <ReviewView />}
@@ -64,6 +78,7 @@ export const MobileShell = () => {
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-0 sm:p-4 text-gray-800">
+      <SyncProgressOverlay />
       {/* 桌面端开发/演示工具栏 (仅在 PC 浏览器端显示，方便演示页面跳转与数据调试) */}
       <header className="w-full max-w-4xl px-4 py-3 flex items-center justify-between text-white border-b border-slate-800 mb-0 sm:mb-4 bg-slate-950/60 backdrop-blur-md rounded-none sm:rounded-xl">
         <div className="flex items-center gap-2.5">

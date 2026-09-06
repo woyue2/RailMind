@@ -52,6 +52,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   const deleteRecord = useFlowStore((s) => s.deleteRecord);
   const updateRecord = useFlowStore((s) => s.updateRecord);
   const togglePinRecord = useFlowStore((s) => s.togglePinRecord);
+  const toggleCompletedRecord = useFlowStore((s) => s.toggleCompletedRecord);
   const quickSelectedThreadId = useFlowStore((s) => s.quickSelectedThreadId);
   const setQuickSelectedThreadId = useFlowStore((s) => s.setQuickSelectedThreadId);
   const threads = useFlowStore((s) => s.threads);
@@ -296,26 +297,47 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
             boxShadow: item.quote_color ? `inset 3px 0 0 0 ${item.quote_color}` : undefined,
           }}
         >
-          {/* Timestamp & 📌 Pin icon directly under hh:mm */}
-          <div className="flex flex-col items-center mr-2 flex-shrink-0 w-10 select-none">
+          {/* Timestamp with pin and completion actions directly underneath */}
+          <div className="flex flex-col items-center mr-2 flex-shrink-0 w-14 select-none">
             <span className="text-[11.5px] font-mono text-gray-400 mt-0.5">
               {formatTime(item.created_at)}
             </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                togglePinRecord(item.id);
-              }}
-              className={`mt-1 p-0.5 rounded transition-all cursor-pointer ${
-                item.is_pinned
-                  ? 'text-amber-500 bg-amber-50 shadow-2xs scale-105'
-                  : 'min-w-9 min-h-9 text-gray-300 hover:text-amber-500 opacity-100 pointer-fine:opacity-0 group-hover:opacity-100'
-              }`}
-              title={item.is_pinned ? '取消置顶气泡' : '置顶为浮动气泡'}
-            >
-              <Pin className={`w-3 h-3 ${item.is_pinned ? 'fill-amber-500' : ''}`} />
-            </button>
+            <div className="mt-1 flex items-center justify-center gap-0.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePinRecord(item.id);
+                }}
+                className={`min-w-6 min-h-6 p-1 rounded transition-all cursor-pointer flex items-center justify-center ${
+                  item.is_pinned
+                    ? 'text-amber-500 bg-amber-50 shadow-2xs scale-105'
+                    : 'text-gray-300 hover:text-amber-500 opacity-100 pointer-fine:opacity-0 group-hover:opacity-100'
+                }`}
+                title={item.is_pinned ? '取消置顶气泡' : '置顶为浮动气泡'}
+                aria-label={item.is_pinned ? '取消置顶气泡' : '置顶为浮动气泡'}
+                aria-pressed={Boolean(item.is_pinned)}
+              >
+                <Pin className={`w-3 h-3 ${item.is_pinned ? 'fill-amber-500' : ''}`} />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCompletedRecord(item.id);
+                }}
+                className={`min-w-6 min-h-6 p-1 rounded transition-all cursor-pointer flex items-center justify-center ${
+                  item.is_completed
+                    ? 'text-emerald-600 bg-emerald-50 shadow-2xs scale-105'
+                    : 'text-gray-300 hover:text-emerald-600 opacity-100 pointer-fine:opacity-0 group-hover:opacity-100'
+                }`}
+                title={item.is_completed ? '取消已完成' : '标记为已完成'}
+                aria-label={item.is_completed ? '取消已完成' : '标记为已完成'}
+                aria-pressed={Boolean(item.is_completed)}
+              >
+                <Check className="w-3 h-3" />
+              </button>
+            </div>
           </div>
 
           {/* Main Content Area */}
@@ -397,7 +419,9 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 {item.text && (
                   <div
                     onDoubleClick={() => setIsEditing(true)}
-                    className="text-[13.5px] text-gray-900 leading-snug break-words font-normal cursor-text select-text"
+                    className={`text-[13.5px] leading-snug break-words font-normal cursor-text select-text transition-colors ${
+                      item.is_completed ? 'text-gray-500 line-through' : 'text-gray-900'
+                    }`}
                     title="双击可直接修改文字"
                   >
                     {item.text}

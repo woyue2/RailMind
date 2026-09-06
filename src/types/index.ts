@@ -21,6 +21,7 @@ export interface RecordItem {
   audio?: AudioAttachment | null; // 附带的语音录音便签
   is_pinned?: boolean; // 是否置顶为浮动气泡便签
   pinned_at?: string | null; // 置顶时间戳 (ISO 8601 string)
+  is_completed?: boolean; // 是否已完成（兼容旧数据可缺省）
 }
 
 // Tag 标签数据模型

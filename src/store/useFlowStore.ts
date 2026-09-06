@@ -31,6 +31,8 @@ interface FlowState {
   selectedThreadId: string | null;
   selectedDate: string | null; // filter date in RecordView (null = default today)
   recordViewMode: 'timeline' | 'daily-pages';
+  timelineDateHeaderBackgroundOpacity: number; // 时间流日期标题背景不透明度（0-100）
+  dailyPageDateHeaderBackgroundOpacity: number; // 翻页日期标题背景不透明度（0-100）
   fromReviewDate: boolean; // 是否从回顾页点击某日期跳转而来
   fromThreadDetailId: string | null; // 是否从思维线详情页点击某记录跳转而来
 
@@ -60,6 +62,7 @@ interface FlowState {
   deleteRecord: (id: string) => void;
   togglePinRecord: (id: string) => void;
   unpinRecord: (id: string) => void;
+  toggleCompletedRecord: (id: string) => void;
 
   // Actions for Threads
   createThread: (title: string) => ThreadItem;
@@ -86,6 +89,8 @@ interface FlowState {
   setQuickSelectedThreadId: (id: string | null) => void;
   setSelectedDate: (date: string | null) => void;
   setRecordViewMode: (mode: 'timeline' | 'daily-pages') => void;
+  setTimelineDateHeaderBackgroundOpacity: (opacity: number) => void;
+  setDailyPageDateHeaderBackgroundOpacity: (opacity: number) => void;
   setHomeLink: (link: { shownName: string; href: string } | null) => void;
   resetToDefaultData: () => void;
 }
@@ -295,6 +300,8 @@ export const useFlowStore = create<FlowState>()(
       selectedThreadId: null,
       selectedDate: null,
       recordViewMode: 'timeline',
+      timelineDateHeaderBackgroundOpacity: 30,
+      dailyPageDateHeaderBackgroundOpacity: 30,
       fromReviewDate: false,
       fromThreadDetailId: null,
       activeBranchParentId: null,
@@ -449,6 +456,29 @@ export const useFlowStore = create<FlowState>()(
                 ...r,
                 is_pinned: false,
                 pinned_at: null,
+                updated_at: nowIso,
+              };
+              return targetRecord;
+            }
+            return r;
+          });
+          return { records: updatedRecords };
+        });
+
+        if (targetRecord) {
+          triggerAutoSync((sync) => sync?.pushRecord(targetRecord!));
+        }
+      },
+
+      toggleCompletedRecord: (id) => {
+        const nowIso = new Date().toISOString();
+        let targetRecord: RecordItem | undefined;
+        set((state) => {
+          const updatedRecords = state.records.map((r) => {
+            if (r.id === id) {
+              targetRecord = {
+                ...r,
+                is_completed: !r.is_completed,
                 updated_at: nowIso,
               };
               return targetRecord;
@@ -642,6 +672,12 @@ export const useFlowStore = create<FlowState>()(
 
       setRecordViewMode: (recordViewMode) => set({ recordViewMode }),
 
+      setTimelineDateHeaderBackgroundOpacity: (opacity) =>
+        set({ timelineDateHeaderBackgroundOpacity: Math.min(100, Math.max(0, Math.round(opacity))) }),
+
+      setDailyPageDateHeaderBackgroundOpacity: (opacity) =>
+        set({ dailyPageDateHeaderBackgroundOpacity: Math.min(100, Math.max(0, Math.round(opacity))) }),
+
       setHomeLink: (homeLink) => {
         const nextLink = homeLink ? { ...homeLink, updatedAt: new Date().toISOString() } : null;
         set({ homeLink: nextLink });
@@ -667,12 +703,14 @@ export const useFlowStore = create<FlowState>()(
       // v3 prevents previously persisted development fixtures from leaking
       // into a production APK after upgrading from the prototype build.
       name: 'flow-01-storage-v3',
-      version: 4,
+      version: 5,
       migrate: (persistedState) => {
         const state = persistedState as Partial<FlowState>;
         return {
           ...state,
           recordViewMode: state.recordViewMode ?? 'timeline',
+          timelineDateHeaderBackgroundOpacity: state.timelineDateHeaderBackgroundOpacity ?? 30,
+          dailyPageDateHeaderBackgroundOpacity: state.dailyPageDateHeaderBackgroundOpacity ?? 30,
           records: (state.records ?? []).map((record) => ({
             ...record,
             updated_at: record.updated_at ?? record.created_at,
