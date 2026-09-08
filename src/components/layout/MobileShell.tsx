@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { BookOpen, GitFork, PenTool } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { RecordView } from '../../views/record/RecordView';
@@ -8,6 +10,7 @@ import { WidgetSimulatorView } from '../../views/WidgetSimulatorView';
 import { SyncProgressOverlay } from '../common/SyncProgressOverlay';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
 import { triggerR2Sync } from '../../sync';
+import { SYSTEM_BACK_EVENT } from '../../hooks/useSystemBack';
 
 export const MobileShell = () => {
   const activeTab = useFlowStore((s) => s.activeTab);
@@ -15,12 +18,68 @@ export const MobileShell = () => {
   const threads = useFlowStore((s) => s.threads);
   const selectedThreadId = useFlowStore((s) => s.selectedThreadId);
   const openThreadDetail = useFlowStore((s) => s.openThreadDetail);
+  const backFromThreadDetail = useFlowStore((s) => s.backFromThreadDetail);
+  const backToReview = useFlowStore((s) => s.backToReview);
+  const backToThreadDetail = useFlowStore((s) => s.backToThreadDetail);
+  const fromReviewDate = useFlowStore((s) => s.fromReviewDate);
+  const fromThreadDetailId = useFlowStore((s) => s.fromThreadDetailId);
 
   useEffect(() => {
     if (isR2Configured() && loadR2Settings().enabled) {
       triggerR2Sync({ manual: false }).catch(() => {});
     }
   }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const listenerPromise = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+      const backEvent = new CustomEvent<{ handled: boolean }>(SYSTEM_BACK_EVENT, {
+        detail: { handled: false },
+      });
+      window.dispatchEvent(backEvent);
+      if (backEvent.detail.handled) return;
+
+      if (activeTab === 'thread-detail') {
+        backFromThreadDetail();
+        return;
+      }
+
+      if (activeTab === 'record') {
+        if (fromThreadDetailId) {
+          backToThreadDetail();
+          return;
+        }
+        if (fromReviewDate) {
+          backToReview();
+          return;
+        }
+      }
+
+      if (activeTab === 'review' || activeTab === 'widgets') {
+        setActiveTab('record');
+        return;
+      }
+
+      if (canGoBack) {
+        window.history.back();
+      } else {
+        CapacitorApp.exitApp();
+      }
+    });
+
+    return () => {
+      listenerPromise.then((listener) => listener.remove()).catch(() => {});
+    };
+  }, [
+    activeTab,
+    backFromThreadDetail,
+    backToReview,
+    backToThreadDetail,
+    fromReviewDate,
+    fromThreadDetailId,
+    setActiveTab,
+  ]);
 
   return (
     <div className="mobile-app-shell app-workspace h-dvh w-full overflow-hidden bg-slate-100 text-gray-800 flex">

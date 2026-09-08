@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { useSystemBack } from '../../hooks/useSystemBack';
 
 interface ConfirmDeleteModalProps {
   isOpen: boolean;
@@ -16,6 +17,8 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
   recordText,
   hasChildren,
 }) => {
+  useSystemBack(isOpen, onClose);
+
   if (!isOpen) return null;
 
   return (

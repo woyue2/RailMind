@@ -35,6 +35,7 @@ interface FlowState {
   dailyPageDateHeaderBackgroundOpacity: number; // 翻页日期标题背景不透明度（0-100）
   fromReviewDate: boolean; // 是否从回顾页点击某日期跳转而来
   fromThreadDetailId: string | null; // 是否从思维线详情页点击某记录跳转而来
+  threadDetailReturnContext: ThreadDetailReturnContext | null;
 
   // Interaction state
   activeBranchParentId: string | null; // 正在分支的父记录 ID
@@ -59,7 +60,8 @@ interface FlowState {
     id: string,
     updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id' | 'imgs' | 'bg_color' | 'audio' | 'is_pinned' | 'pinned_at'>>
   ) => void;
-  deleteRecord: (id: string) => void;
+  deleteRecord: (id: string) => RecordItem[];
+  restoreRecords: (records: RecordItem[]) => void;
   togglePinRecord: (id: string) => void;
   unpinRecord: (id: string) => void;
   toggleCompletedRecord: (id: string) => void;
@@ -78,6 +80,7 @@ interface FlowState {
   // Navigation actions
   setActiveTab: (tab: 'record' | 'review' | 'thread-detail' | 'widgets') => void;
   openThreadDetail: (threadId: string) => void;
+  backFromThreadDetail: () => void;
   openDateRecord: (dateStr: string) => void;
   openDateRecordFromThread: (dateStr: string, threadId: string) => void;
   backToReview: () => void;
@@ -93,6 +96,14 @@ interface FlowState {
   setDailyPageDateHeaderBackgroundOpacity: (opacity: number) => void;
   setHomeLink: (link: { shownName: string; href: string } | null) => void;
   resetToDefaultData: () => void;
+}
+
+interface ThreadDetailReturnContext {
+  tab: 'record' | 'review';
+  selectedDate: string | null;
+  recordViewMode: 'timeline' | 'daily-pages';
+  fromReviewDate: boolean;
+  fromThreadDetailId: string | null;
 }
 
 // Initial Mock Seed Data
@@ -304,6 +315,7 @@ export const useFlowStore = create<FlowState>()(
       dailyPageDateHeaderBackgroundOpacity: 30,
       fromReviewDate: false,
       fromThreadDetailId: null,
+      threadDetailReturnContext: null,
       activeBranchParentId: null,
       activeQuoteRecordId: null,
       quickSelectedThreadId: null,
@@ -411,14 +423,42 @@ export const useFlowStore = create<FlowState>()(
       },
 
       deleteRecord: (id) => {
-        const removedIds = get().records
-          .filter((record) => record.id === id || record.parent_id === id)
-          .map((record) => record.id);
+        const records = get().records;
+        const removedIds = new Set<string>([id]);
+        let changed = true;
+
+        // Keep the confirmation copy honest: deleting a parent removes the full branch tree.
+        while (changed) {
+          changed = false;
+          records.forEach((record) => {
+            if (record.parent_id && removedIds.has(record.parent_id) && !removedIds.has(record.id)) {
+              removedIds.add(record.id);
+              changed = true;
+            }
+          });
+        }
+
+        const removedRecords = records.filter((record) => removedIds.has(record.id));
+        if (!removedRecords.length) return [];
+
         set((state) => ({
-          records: state.records.filter((record) => !removedIds.includes(record.id)),
+          records: state.records.filter((record) => !removedIds.has(record.id)),
         }));
 
-        removedIds.forEach((recordId) => triggerAutoSync((sync) => sync?.deleteRecord(recordId)));
+        removedRecords.forEach((record) => triggerAutoSync((sync) => sync?.deleteRecord(record.id)));
+        return removedRecords;
+      },
+
+      restoreRecords: (recordsToRestore) => {
+        if (!recordsToRestore.length) return;
+        const existingIds = new Set(get().records.map((record) => record.id));
+        const restoredRecords = recordsToRestore.filter((record) => !existingIds.has(record.id));
+        if (!restoredRecords.length) return;
+
+        set((state) => ({
+          records: [...state.records, ...restoredRecords],
+        }));
+        restoredRecords.forEach((record) => triggerAutoSync((sync) => sync?.pushRecord(record)));
       },
 
       togglePinRecord: (id) => {
@@ -591,14 +631,52 @@ export const useFlowStore = create<FlowState>()(
         set({
           activeTab: tab,
           // When switching tabs explicitly, if switching to record, clear filter unless already handled
-          ...(tab === 'record' ? { selectedDate: null, fromReviewDate: false, fromThreadDetailId: null } : {}),
+          ...(tab === 'record'
+            ? {
+                selectedDate: null,
+                fromReviewDate: false,
+                fromThreadDetailId: null,
+                threadDetailReturnContext: null,
+              }
+            : {}),
         });
       },
 
       openThreadDetail: (threadId) => {
+        const { activeTab, selectedDate, recordViewMode, fromReviewDate, fromThreadDetailId } = get();
         set({
           activeTab: 'thread-detail',
           selectedThreadId: threadId,
+          threadDetailReturnContext: {
+            tab: activeTab === 'record' ? 'record' : 'review',
+            selectedDate,
+            recordViewMode,
+            fromReviewDate,
+            fromThreadDetailId,
+          },
+        });
+      },
+
+      backFromThreadDetail: () => {
+        const { threadDetailReturnContext } = get();
+        if (threadDetailReturnContext?.tab === 'record') {
+          set({
+            activeTab: 'record',
+            selectedDate: threadDetailReturnContext.selectedDate,
+            recordViewMode: threadDetailReturnContext.recordViewMode,
+            fromReviewDate: threadDetailReturnContext.fromReviewDate,
+            fromThreadDetailId: threadDetailReturnContext.fromThreadDetailId,
+            threadDetailReturnContext: null,
+          });
+          return;
+        }
+
+        set({
+          activeTab: 'review',
+          selectedDate: null,
+          fromReviewDate: false,
+          fromThreadDetailId: null,
+          threadDetailReturnContext: null,
         });
       },
 
@@ -608,6 +686,7 @@ export const useFlowStore = create<FlowState>()(
           selectedDate: dateStr,
           fromReviewDate: true,
           fromThreadDetailId: null,
+          threadDetailReturnContext: null,
         });
       },
 
@@ -617,6 +696,7 @@ export const useFlowStore = create<FlowState>()(
           selectedDate: dateStr,
           fromReviewDate: false,
           fromThreadDetailId: threadId,
+          threadDetailReturnContext: null,
         });
       },
 
@@ -626,6 +706,7 @@ export const useFlowStore = create<FlowState>()(
           selectedDate: null,
           fromReviewDate: false,
           fromThreadDetailId: null,
+          threadDetailReturnContext: null,
         });
       },
 
@@ -638,6 +719,7 @@ export const useFlowStore = create<FlowState>()(
             selectedDate: null,
             fromReviewDate: false,
             fromThreadDetailId: null,
+            threadDetailReturnContext: null,
           });
         } else {
           set({
@@ -645,6 +727,7 @@ export const useFlowStore = create<FlowState>()(
             selectedDate: null,
             fromReviewDate: false,
             fromThreadDetailId: null,
+            threadDetailReturnContext: null,
           });
         }
       },
@@ -654,6 +737,7 @@ export const useFlowStore = create<FlowState>()(
           selectedDate: null,
           fromReviewDate: false,
           fromThreadDetailId: null,
+          threadDetailReturnContext: null,
         });
       },
 
@@ -695,6 +779,7 @@ export const useFlowStore = create<FlowState>()(
           selectedDate: null,
           fromReviewDate: false,
           fromThreadDetailId: null,
+          threadDetailReturnContext: null,
           homeLink: null,
         });
       },
@@ -704,10 +789,14 @@ export const useFlowStore = create<FlowState>()(
       // into a production APK after upgrading from the prototype build.
       name: 'flow-01-storage-v3',
       version: 5,
+      // Navigation origin is session-only; keep the existing persistence behavior
+      // for the rest of the store unchanged.
+      partialize: (state): FlowState => ({ ...state, threadDetailReturnContext: null }),
       migrate: (persistedState) => {
         const state = persistedState as Partial<FlowState>;
         return {
           ...state,
+          threadDetailReturnContext: null,
           recordViewMode: state.recordViewMode ?? 'timeline',
           timelineDateHeaderBackgroundOpacity: state.timelineDateHeaderBackgroundOpacity ?? 30,
           dailyPageDateHeaderBackgroundOpacity: state.dailyPageDateHeaderBackgroundOpacity ?? 30,
@@ -715,7 +804,7 @@ export const useFlowStore = create<FlowState>()(
             ...record,
             updated_at: record.updated_at ?? record.created_at,
           })),
-        };
+        } as FlowState;
       },
     }
   )

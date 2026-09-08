@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, Plus, X, Sparkles } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
+import { useSystemBack } from '../../hooks/useSystemBack';
 
 interface ThreadPickerModalProps {
   isOpen: boolean;
@@ -22,6 +23,8 @@ export const ThreadPickerModal = ({
   const searchThreads = useFlowStore((s) => s.searchThreads);
   const getRecentThreads = useFlowStore((s) => s.getRecentThreads);
   const createThread = useFlowStore((s) => s.createThread);
+
+  useSystemBack(isOpen, onClose);
 
   if (!isOpen) return null;
 

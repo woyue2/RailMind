@@ -18,28 +18,35 @@ import {
   Pin,
 } from 'lucide-react';
 import { EnrichedRecordItem, RecordItem } from '../../types';
-import { formatTime, formatShortDateTime, getLocalDateKey } from '../../utils/dateUtils';
+import { formatTime, formatShortDateTime, formatSimpleDate, getLocalDateKey } from '../../utils/dateUtils';
 import { processImageFiles, MAX_NOTE_IMAGES } from '../../utils/imageUtils';
 import { useFlowStore } from '../../store/useFlowStore';
 import { ConfirmDeleteModal } from '../../components/modals/ConfirmDeleteModal';
 import { ImageViewerModal } from '../../components/modals/ImageViewerModal';
 import { AudioPlayerPill } from '../../components/common/AudioPlayerPill';
 import { AudioRecorderModal } from '../../components/modals/AudioRecorderModal';
+import { useSystemBack } from '../../hooks/useSystemBack';
 
 interface RecordItemRowProps {
   item: EnrichedRecordItem;
   level: number;
   isLastChild?: boolean;
+  displayDate?: string;
+  previewPath?: string;
   onOpenThreadPicker: (recordId: string, currentText: string) => void;
   onOpenTagPicker: (recordId: string, currentTagId: string | null) => void;
+  onRecordsDeleted?: (records: RecordItem[]) => void;
 }
 
 export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   item,
   level,
   isLastChild = false,
+  displayDate = getLocalDateKey(item.created_at),
+  previewPath,
   onOpenThreadPicker,
   onOpenTagPicker,
+  onRecordsDeleted,
 }) => {
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
   const setActiveBranchParentId = useFlowStore((s) => s.setActiveBranchParentId);
@@ -47,7 +54,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   const setActiveQuoteRecordId = useFlowStore((s) => s.setActiveQuoteRecordId);
   const highlightRecordId = useFlowStore((s) => s.highlightRecordId);
   const setHighlightRecordId = useFlowStore((s) => s.setHighlightRecordId);
-  const openDateRecord = useFlowStore((s) => s.openDateRecord);
+  const setSelectedDate = useFlowStore((s) => s.setSelectedDate);
   const openThreadDetail = useFlowStore((s) => s.openThreadDetail);
   const deleteRecord = useFlowStore((s) => s.deleteRecord);
   const updateRecord = useFlowStore((s) => s.updateRecord);
@@ -60,6 +67,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // In-place text editing state
   const [isEditing, setIsEditing] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [editText, setEditText] = useState(item.text);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -91,6 +99,8 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   // Popover state for multiple downstream references
   const [showDownstreamPopover, setShowDownstreamPopover] = useState(false);
 
+  useSystemBack(showColorPicker, () => setShowColorPicker(false));
+
   // Keep editText in sync when item.text changes externally
   useEffect(() => {
     setEditText(item.text);
@@ -106,7 +116,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   const isBranchingThis = activeBranchParentId === item.id;
   const isQuotingThis = activeQuoteRecordId === item.id;
-  const isHighlighted = highlightRecordId === item.id;
+  const isHighlighted = !previewPath && highlightRecordId === item.id;
   const hasChildren = item.children && item.children.length > 0;
   const activeQuickThread = quickSelectedThreadId
     ? threads.find((t) => t.id === quickSelectedThreadId)
@@ -114,12 +124,14 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Upstream quoted record
   const quotedRecord = item.quote_id ? records.find((r) => r.id === item.quote_id) : null;
-  // 跨日分支的子记录: level===0 说明父不在同一天树中, 分支关系已退化为引用
+  // Only the canonical daily occurrence needs a cross-day source card.
   const parentRecord = item.parent_id ? records.find((r) => r.id === item.parent_id) : null;
-  const isCrossDayBranchChild = level === 0 && !!item.parent_id;
+  const isCrossDayBranchChild = !previewPath && !!item.parent_id &&
+    (!parentRecord || getLocalDateKey(parentRecord.created_at) !== getLocalDateKey(item.created_at));
   const showUpstreamCard = !!item.quote_id || isCrossDayBranchChild;
   const upstreamRecord = item.quote_id ? quotedRecord : parentRecord;
-  // 源记录引用色: 引用路径取被引记录的 color；跨日分支退化取父记录的 color。
+  const UpstreamIcon = item.quote_id ? Quote : GitBranch;
+  // 来源色由引用记录或分支父记录提供。
   // 谨记不 fallback 到自身 color，否则子记录会取错自己的色，导致同源不同色。
   const upstreamColor =
     (item.quote_id ? quotedRecord?.quote_color : parentRecord?.quote_color) || null;
@@ -129,28 +141,16 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Bidirectional Jump handler
   const handleJumpToRecord = (targetRecord: RecordItem) => {
-    const elementId = `record-${targetRecord.id}`;
-    const el = document.getElementById(elementId);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setHighlightRecordId(targetRecord.id);
-      setTimeout(() => {
-        setHighlightRecordId(null);
+    setSelectedDate(getLocalDateKey(targetRecord.created_at));
+    setHighlightRecordId(targetRecord.id);
+    window.setTimeout(() => {
+      document.getElementById(`record-${targetRecord.id}`)?.scrollIntoView({
+        behavior: 'smooth', block: 'center', inline: 'nearest',
+      });
+      window.setTimeout(() => {
+        if (useFlowStore.getState().highlightRecordId === targetRecord.id) setHighlightRecordId(null);
       }, 1600);
-    } else {
-      const targetDate = getLocalDateKey(targetRecord.created_at);
-      openDateRecord(targetDate);
-      setHighlightRecordId(targetRecord.id);
-      setTimeout(() => {
-        const targetEl = document.getElementById(elementId);
-        if (targetEl) {
-          targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        setTimeout(() => {
-          setHighlightRecordId(null);
-        }, 1600);
-      }, 250);
-    }
+    }, 300);
   };
 
   const handleBranchClick = () => {
@@ -243,8 +243,33 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
     }
   };
 
+  const displayId = previewPath ? `record-preview-${previewPath}` : `record-${item.id}`;
+  if (previewPath && !isExpanded) {
+    return (
+      <button type="button" id={displayId} aria-expanded={false}
+        onClick={() => setIsExpanded(true)}
+        className="block w-full min-w-0 text-left rounded-lg border border-amber-100 bg-amber-50/40 px-2.5 py-2 hover:bg-amber-50">
+        <span className="flex items-center gap-1 text-[11px] text-amber-700">
+          <GitBranch className="w-3 h-3 shrink-0" />
+          {formatSimpleDate(item.created_at)}续写
+          <span className="ml-auto shrink-0">展开</span>
+        </span>
+        <span className="mt-1 line-clamp-2 break-words text-[13px] text-gray-700">
+          {item.text || (item.imgs?.length ? '图片记录' : item.audio ? '语音记录' : '记录')}
+        </span>
+        {!!(item.imgs?.length || item.audio) && <span className="text-[10px] text-gray-400">含{item.imgs?.length ? '图片' : ''}{item.audio ? ' 语音' : ''}</span>}
+      </button>
+    );
+  }
+
   return (
-    <div className="relative" id={`record-${item.id}`}>
+    <div className="relative min-w-0" id={displayId}>
+      {previewPath && <button type="button" aria-expanded={true}
+        onClick={() => setIsExpanded(false)}
+        className="flex w-full items-center gap-1 px-2.5 py-1 text-[11px] text-amber-700">
+        <GitBranch className="w-3 h-3" />{formatSimpleDate(item.created_at)}续写
+        <span className="ml-auto">收起</span>
+      </button>}
       {/*
         Node Row Container:
         - 每一层子分支由左侧父容器的虚线导轨引导 (border-l)
@@ -342,7 +367,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
           {/* Main Content Area */}
           <div className="flex-1 min-w-0 pr-1">
-            {/* Upstream Quoted Note Card (引用 或 跨日分支退化) */}
+            {/* Source card for quotes and canonical cross-day branches */}
             {showUpstreamCard && (
               <div className="mb-1.5">
                 {upstreamRecord ? (
@@ -357,7 +382,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                     }}
                     title={item.quote_id ? '点击跳转到引用的原记录' : '点击跳转到跨日分支的父记录'}
                   >
-                    <Quote
+                    <UpstreamIcon
                       className="w-3 h-3 flex-shrink-0 group-hover/quote:scale-110 transition-transform"
                       style={{ color: upstreamColor ?? '#d97706' }}
                     />
@@ -365,7 +390,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                       className="text-[10px] font-medium flex-shrink-0"
                       style={{ color: upstreamColor ? `${upstreamColor}cc` : '#b45309' }}
                     >
-                      {formatShortDateTime(upstreamRecord.created_at)}
+                      {item.quote_id ? formatShortDateTime(upstreamRecord.created_at) : `分支自 ${formatSimpleDate(upstreamRecord.created_at)} ·`}
                     </span>
                     <span
                       className="text-[11px] truncate font-normal flex-1 min-w-0"
@@ -381,7 +406,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                   </button>
                 ) : (
                   <div className="text-[10.5px] text-gray-400 italic px-2 py-0.5 rounded bg-gray-50 border border-dashed border-gray-200">
-                    [原记录已移除]
+                    来源记录已删除
                   </div>
                 )}
               </div>
@@ -665,7 +690,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                     ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400 font-bold'
                     : 'text-gray-400 hover:text-gray-800 hover:bg-gray-100 pointer-fine:opacity-60 group-hover:opacity-100'
                 }`}
-                title={isBranchingThis ? '取消分支' : '新建分支子记录 (⎇)'}
+                title={isBranchingThis ? '取消续写' : '从这里续写'}
               >
                 <GitBranch className="w-3.5 h-3.5" />
               </button>
@@ -889,7 +914,10 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
       <ConfirmDeleteModal
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
-        onConfirm={() => deleteRecord(item.id)}
+        onConfirm={() => {
+          const deletedRecords = deleteRecord(item.id);
+          onRecordsDeleted?.(deletedRecords);
+        }}
         recordText={item.text}
         hasChildren={hasChildren}
       />
@@ -920,15 +948,19 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
         方案 B: 连续虚线左边框 (border-l-[1.5px] border-dashed border-slate-300)
       */}
       {hasChildren && (
-        <div className="relative ml-[22px] pl-[12px] border-l-[1.5px] border-dashed border-slate-300 my-0.5 space-y-0.5">
+        <div className={`relative ${level < 2 ? 'ml-[10px] pl-[12px]' : 'ml-0 pl-1'} border-l-[1.5px] border-dashed border-slate-300 my-0.5 space-y-0.5`}>
           {item.children!.map((child, idx) => (
             <RecordItemRow
               key={child.id}
               item={child}
               level={level + 1}
+              displayDate={displayDate}
+              previewPath={previewPath || getLocalDateKey(child.created_at) !== displayDate
+                ? `${previewPath ?? `${displayDate}-${item.id}`}-${child.id}` : undefined}
               isLastChild={idx === item.children!.length - 1}
               onOpenThreadPicker={onOpenThreadPicker}
               onOpenTagPicker={onOpenTagPicker}
+              onRecordsDeleted={onRecordsDeleted}
             />
           ))}
         </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Tag, Plus, X, Check } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { QUOTE_COLOR_PALETTE as PRESET_COLORS } from '../../utils/quoteColors';
+import { useSystemBack } from '../../hooks/useSystemBack';
 
 interface TagPickerModalProps {
   isOpen: boolean;
@@ -22,6 +23,8 @@ export const TagPickerModal = ({
 
   const tags = useFlowStore((s) => s.tags);
   const createTag = useFlowStore((s) => s.createTag);
+
+  useSystemBack(isOpen, onClose);
 
   if (!isOpen) return null;
 

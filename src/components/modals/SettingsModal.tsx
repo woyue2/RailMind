@@ -9,6 +9,7 @@ import {
 } from '../../sync/credentials';
 import { testR2Connection, triggerR2Sync } from '../../sync';
 import { R2Config, SyncReport } from '../../sync/types';
+import { useSystemBack } from '../../hooks/useSystemBack';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -26,6 +27,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const [syncing, setSyncing] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useSystemBack(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {

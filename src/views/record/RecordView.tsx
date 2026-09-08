@@ -8,7 +8,8 @@ import { TagPickerModal } from '../../components/modals/TagPickerModal';
 import { SettingsModal } from '../../components/modals/SettingsModal';
 import { HomeLinkModal } from '../../components/modals/HomeLinkModal';
 import { getRelativeDayMeta } from '../../utils/dateUtils';
-import { EnrichedRecordItem } from '../../types';
+import { buildRecordBranches } from '../../utils/recordBranches';
+import { EnrichedRecordItem, RecordItem } from '../../types';
 import {
   Calendar,
   RotateCcw,
@@ -24,7 +25,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-import { parseISO, format, subDays } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
 
 interface DayGroup {
@@ -52,6 +53,7 @@ export const RecordView = () => {
   const backToThreadDetail = useFlowStore((s) => s.backToThreadDetail);
   const resetToTodayRecord = useFlowStore((s) => s.resetToTodayRecord);
   const updateRecord = useFlowStore((s) => s.updateRecord);
+  const restoreRecords = useFlowStore((s) => s.restoreRecords);
   const homeLink = useFlowStore((s) => s.homeLink);
   const setHomeLink = useFlowStore((s) => s.setHomeLink);
 
@@ -87,6 +89,34 @@ export const RecordView = () => {
   const [homeLinkModalOpen, setHomeLinkModalOpen] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
+  const undoDeleteTimerRef = useRef<number | null>(null);
+  const [undoDeleteState, setUndoDeleteState] = useState<{ records: RecordItem[] } | null>(null);
+
+  const handleRecordsDeleted = (deletedRecords: RecordItem[]) => {
+    if (!deletedRecords.length) return;
+    if (undoDeleteTimerRef.current !== null) {
+      window.clearTimeout(undoDeleteTimerRef.current);
+    }
+    setUndoDeleteState({ records: deletedRecords });
+    undoDeleteTimerRef.current = window.setTimeout(() => {
+      setUndoDeleteState(null);
+      undoDeleteTimerRef.current = null;
+    }, 7000);
+  };
+
+  const handleUndoDelete = () => {
+    if (!undoDeleteState) return;
+    restoreRecords(undoDeleteState.records);
+    setUndoDeleteState(null);
+    if (undoDeleteTimerRef.current !== null) {
+      window.clearTimeout(undoDeleteTimerRef.current);
+      undoDeleteTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => {
+    if (undoDeleteTimerRef.current !== null) window.clearTimeout(undoDeleteTimerRef.current);
+  }, []);
   const r2Enabled = isR2Configured() && loadR2Settings().enabled;
 
   const openHomeLink = () => {
@@ -118,25 +148,7 @@ export const RecordView = () => {
   // Multi-day chronological grouping with hierarchical tree construction
   const dayGroups: DayGroup[] = useMemo(() => {
     // 1. Group records by Date (yyyy-MM-dd)
-    const map = new Map<string, EnrichedRecordItem[]>();
-
-    records.forEach((r) => {
-      try {
-        const d = parseISO(r.created_at);
-        const dateKey = format(d, 'yyyy-MM-dd');
-        if (!map.has(dateKey)) {
-          map.set(dateKey, []);
-        }
-        map.get(dateKey)!.push({
-          ...r,
-          thread: threads.find((t) => t.id === r.thread_id),
-          tag: tags.find((t) => t.id === r.tag_id),
-          children: [],
-        });
-      } catch {
-        // ignore invalid dates
-      }
-    });
+    const { days: map, parents } = buildRecordBranches(records, tags, threads);
 
     // 2. Sort dates in chronological ascending order (oldest date at Top -> newest/today at Bottom)
     const requiredDateKeys = recordViewMode === 'daily-pages'
@@ -150,7 +162,7 @@ export const RecordView = () => {
       (a, b) => new Date(a).getTime() - new Date(b).getTime()
     );
 
-    // 3. Construct branch-tree hierarchy within each day
+    // Each day owns its real records; shared global children include later continuations.
     const groups: DayGroup[] = sortedDateKeys.map((dateKey) => {
       const dayRecords = map.get(dateKey) || [];
       const recordLookup = new Map<string, EnrichedRecordItem>();
@@ -159,15 +171,7 @@ export const RecordView = () => {
         recordLookup.set(item.id, item);
       });
 
-      const roots: EnrichedRecordItem[] = [];
-
-      dayRecords.forEach((item) => {
-        if (item.parent_id && recordLookup.has(item.parent_id)) {
-          recordLookup.get(item.parent_id)!.children!.push(item);
-        } else {
-          roots.push(item);
-        }
-      });
+      const roots = dayRecords.filter((item) => !recordLookup.has(parents.get(item.id) ?? ''));
 
       // Sort roots chronologically (09:12 -> 09:40 -> 16:20)
       roots.sort(
@@ -381,8 +385,10 @@ export const RecordView = () => {
           <RecordItemRow
             item={item}
             level={0}
+            displayDate={group.dateKey}
             onOpenThreadPicker={handleOpenThreadPicker}
             onOpenTagPicker={handleOpenTagPicker}
+            onRecordsDeleted={handleRecordsDeleted}
           />
         </div>
       ))}
@@ -718,8 +724,40 @@ export const RecordView = () => {
         </div>
       )}
 
+      {undoDeleteState && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute left-4 bottom-24 z-40 flex max-w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-slate-200 bg-slate-900 px-3.5 py-2.5 text-xs text-white shadow-xl"
+        >
+          <span className="min-w-0 truncate">
+            {undoDeleteState.records.length > 1 ? '已删除记录及其分支' : '已删除记录'}
+          </span>
+          <button
+            type="button"
+            onClick={handleUndoDelete}
+            className="shrink-0 rounded-lg px-2.5 py-1 font-semibold text-amber-300 transition-colors hover:bg-white/10 hover:text-amber-200"
+          >
+            撤销
+          </button>
+        </div>
+      )}
+
       {/* 3. Bottom Sticky Input Bar (Recent Thread Capsules + Input + Send) */}
-      <RecordInputBar writesToToday={isViewingHistoricalPage} />
+      <RecordInputBar writesToToday={isViewingHistoricalPage} onRecordCreated={(id) => {
+        useFlowStore.getState().setSelectedDate(todayDateKey);
+        visiblePageDateRef.current = todayDateKey;
+        setVisiblePageDate(todayDateKey);
+        useFlowStore.getState().setHighlightRecordId(id);
+        window.setTimeout(() => {
+          document.getElementById(`record-${id}`)?.scrollIntoView({
+            behavior: 'smooth', block: 'center', inline: 'nearest',
+          });
+          window.setTimeout(() => {
+            if (useFlowStore.getState().highlightRecordId === id) useFlowStore.getState().setHighlightRecordId(null);
+          }, 1600);
+        }, 300);
+      }} />
 
       {/* Modals */}
       <ThreadPickerModal
