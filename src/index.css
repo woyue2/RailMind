@@ -77,3 +77,17 @@
 .review-card-scroll::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
 }
+
+/* Keep keyboard navigation visible in the browser. */
+button:focus-visible, a:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+@media (min-width: 768px) {
+  .app-workspace .record-header,
+  .app-workspace .record-input-bar {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
