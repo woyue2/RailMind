@@ -14,7 +14,7 @@ export async function exportJsonFile(filename: string, data: unknown): Promise<'
       recursive: true,
     });
     try {
-      const result = await Share.share({ files: [uri], title: filename, dialogTitle: '导出最近 7 天' });
+      const result = await Share.share({ files: [uri], title: filename, dialogTitle: '导出数据' });
       return result.activityType ? 'shared' : 'dismissed';
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

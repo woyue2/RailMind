@@ -31,15 +31,21 @@ function chronological(a: RecordItem, b: RecordItem): number {
 
 export function buildWeeklyExport(
   records: RecordItem[], tags: TagItem[], threads: ThreadItem[], now = new Date(),
+  scope: 'week' | 'all' = 'week',
 ): { data: WeeklyExport; filename: string } {
   const start = new Date(now);
   start.setDate(start.getDate() - 6);
   start.setHours(0, 0, 0, 0);
   const byId = new Map(records.map((record) => [record.id, record]));
   const weekly = [...byId.values()].filter((record) => {
+    if (scope === 'all') return true;
     const time = Date.parse(record.created_at);
     return time >= start.getTime() && time <= now.getTime();
   }).sort(chronological);
+  if (scope === 'all') {
+    const earliest = weekly.find((record) => Number.isFinite(Date.parse(record.created_at)));
+    start.setTime(earliest ? Date.parse(earliest.created_at) : now.getTime());
+  }
   const seen = new Set(weekly.map((record) => record.id));
   const unresolved = new Set<string>();
   const context: RecordItem[] = [];
@@ -61,15 +67,15 @@ export function buildWeeklyExport(
   const tagIds = new Set(pending.map((record) => record.tag_id));
   const threadIds = new Set(pending.map((record) => record.thread_id));
   return {
-    filename: `RailMind_${localDate(start)}_${localDate(now)}.json`,
+    filename: scope === 'all' ? `RailMind_all_${localDate(now)}.json` : `RailMind_${localDate(start)}_${localDate(now)}.json`,
     data: {
       schema_version: 1,
       exported_at: now.toISOString(),
       range: { start: start.toISOString(), end: now.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
       records: weekly.map(textOnly),
       context_records: context.sort(chronological).map(textOnly),
-      tags: tags.filter((tag) => tagIds.has(tag.id)),
-      threads: threads.filter((thread) => threadIds.has(thread.id)),
+      tags: scope === 'all' ? [...tags] : tags.filter((tag) => tagIds.has(tag.id)),
+      threads: scope === 'all' ? [...threads] : threads.filter((thread) => threadIds.has(thread.id)),
       unresolved_record_ids: [...unresolved].sort(),
     },
   };

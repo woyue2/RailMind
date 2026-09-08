@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { ChevronRight, ChevronDown, ArrowLeft, Tag, Calendar, Layers } from 'lucide-react';
+import { ChevronRight, ChevronDown, ArrowLeft, Tag, Calendar, Layers, Download, FileJson, LoaderCircle } from 'lucide-react';
 import { useFlowStore } from '../store/useFlowStore';
 import { formatShortDateTime } from '../utils/dateUtils';
 import { parseISO, format } from 'date-fns';
@@ -15,6 +15,7 @@ export const ReviewView = () => {
   const openThreadDetail = useFlowStore((s) => s.openThreadDetail);
   const openDateRecord = useFlowStore((s) => s.openDateRecord);
   const [exporting, setExporting] = useState(false);
+  const [exportScope, setExportScope] = useState<'week' | 'all'>('week');
   const [exportMessage, setExportMessage] = useState('');
   const exportLock = useRef(false);
 
@@ -25,12 +26,14 @@ export const ReviewView = () => {
     setExportMessage('');
     try {
       const snapshot = useFlowStore.getState();
-      const { data, filename } = buildWeeklyExport(snapshot.records, snapshot.tags, snapshot.threads);
-      if (!data.records.length) {
+      const { data, filename } = buildWeeklyExport(snapshot.records, snapshot.tags, snapshot.threads, new Date(), exportScope);
+      if (exportScope === 'week' && !data.records.length) {
         setExportMessage('最近 7 天暂无记录，无需导出。');
         return;
       }
-      const count = `本周 ${data.records.length} 条，补充历史上下文 ${data.context_records.length} 条`;
+      const count = exportScope === 'all'
+        ? `全部 ${data.records.length} 条记录、${data.tags.length} 个标签、${data.threads.length} 条思维线`
+        : `最近 7 天 ${data.records.length} 条，补充历史上下文 ${data.context_records.length} 条`;
       setExportMessage(count);
       const result = await exportJsonFile(filename, data);
       setExportMessage(`${count}。${result === 'download' ? '已发起文件下载。' : result === 'shared' ? '已交给所选应用。' : '分享已关闭，未确认发送。'}`);
@@ -111,17 +114,41 @@ export const ReviewView = () => {
       </div>
 
       <div className="p-4 space-y-5 pb-8">
-        <section className="rounded-xl border border-gray-200/80 bg-white p-4 space-y-2">
+        <section aria-labelledby="export-heading" className="overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50/60 p-4 shadow-sm">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-white text-blue-600">
+              <FileJson aria-hidden="true" className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 id="export-heading" className="text-sm font-semibold text-gray-900">导出数据</h3>
+              <p className="mt-0.5 text-xs text-gray-500">带走你的记录与思考</p>
+            </div>
+            <span className="rounded-md border border-blue-100 bg-white px-2 py-1 text-[10px] font-semibold tracking-wide text-blue-700">JSON</span>
+          </div>
+          <fieldset disabled={exporting} className="mb-3">
+            <legend className="mb-2 text-xs font-medium text-gray-600">导出范围</legend>
+            <div className="flex gap-2">
+              {([{ value: 'week', label: '最近 7 天' }, { value: 'all', label: '全部记录' }] as const).map((option) => (
+                <label key={option.value} className={`flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-medium ${exporting ? 'cursor-wait opacity-60' : 'cursor-pointer'} ${exportScope === option.value ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}>
+                  <input type="radio" name="export-scope" value={option.value} checked={exportScope === option.value} onChange={() => { setExportScope(option.value); setExportMessage(''); }} className="accent-blue-600" />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <p id="export-description" className="mb-4 text-xs leading-relaxed text-gray-500">{exportScope === 'all' ? '导出当前设备上的全部文字记录、标签与思维线，不限日期。' : '最近 7 天（含今天）的文字与关联上下文。'}可交给 AI 整理，不含图片和录音。</p>
           <button
             type="button"
             onClick={handleExport}
             disabled={exporting}
-            className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
+            aria-busy={exporting}
+            aria-describedby="export-description"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:bg-blue-400 disabled:shadow-none"
           >
-            {exporting ? '正在导出…' : '导出最近 7 天'}
+            {exporting ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Download aria-hidden="true" className="h-4 w-4" />}
+            {exporting ? '正在导出…' : exportScope === 'all' ? '导出所有记录' : '导出最近 7 天'}
           </button>
-          <p className="text-xs text-gray-500">含今天，保留文字和关联上下文，不含图片和录音。JSON 文件可交给 AI 整理。</p>
-          <p role="status" aria-live="polite" className="text-xs text-gray-600 break-words">{exportMessage}</p>
+          <p role="status" aria-live="polite" aria-atomic="true" className={exportMessage ? 'mt-3 rounded-lg border border-blue-100 bg-white/80 px-3 py-2 text-xs leading-relaxed text-gray-600 break-words' : 'sr-only'}>{exportMessage}</p>
         </section>
         {/* Section 1: 按标签 (By Tag) - 首屏显示前4个，其余滚动侧边栏查看 */}
         <section className="space-y-1.5">
