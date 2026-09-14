@@ -10,9 +10,10 @@ const MAX_RECORDING_SECONDS = 60;
 
 interface RecordInputBarProps {
   writesToToday?: boolean;
+  onRecordCreated?: (id: string) => void;
 }
 
-export const RecordInputBar: React.FC<RecordInputBarProps> = ({ writesToToday = false }) => {
+export const RecordInputBar: React.FC<RecordInputBarProps> = ({ writesToToday = false, onRecordCreated }) => {
   const [inputText, setInputText] = useState('');
   const [pendingImgs, setPendingImgs] = useState<string[]>([]);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
@@ -191,6 +192,8 @@ export const RecordInputBar: React.FC<RecordInputBarProps> = ({ writesToToday = 
       imgs: hasImgs ? pendingImgs : undefined,
       audio: pendingAudio || undefined,
     });
+    const createdRecord = useFlowStore.getState().records.at(-1);
+    if (createdRecord) onRecordCreated?.(createdRecord.id);
 
     setInputText('');
     setPendingImgs([]);
@@ -216,13 +219,13 @@ export const RecordInputBar: React.FC<RecordInputBarProps> = ({ writesToToday = 
         <div className="mb-2 px-2.5 py-1.5 bg-amber-50/90 border border-amber-200/80 rounded-lg flex items-center justify-between text-xs text-amber-900 animate-in fade-in duration-150">
           <div className="flex items-center gap-1.5 truncate pr-2">
             <GitBranch className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
-            <span className="text-[11px] font-medium text-amber-800">分支于:</span>
+            <span className="text-[11px] font-medium text-amber-800 shrink-0">从这里续写:</span>
             <span className="truncate text-amber-700">"{parentRecord.text}"</span>
           </div>
           <button
             onClick={() => setActiveBranchParentId(null)}
             className="text-amber-700 hover:text-amber-900 p-0.5"
-            title="取消分支模式"
+            title="取消续写"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -472,7 +475,7 @@ export const RecordInputBar: React.FC<RecordInputBarProps> = ({ writesToToday = 
               onChange={(e) => setInputText(e.target.value)}
               placeholder={
                 activeBranchParentId
-                  ? '输入分支子想法...'
+                  ? '继续这个想法...'
                   : activeQuoteRecordId
                   ? '输入回应或引用想法...'
                   : quickSelectedThreadId
