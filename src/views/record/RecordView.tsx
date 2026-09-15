@@ -75,6 +75,8 @@ export const RecordView = () => {
   const visiblePageDateRef = useRef(visiblePageDate);
   const pageScrollFrameRef = useRef<number | null>(null);
   const pendingAnimatedPageJumpRef = useRef(false);
+  // 记录上一次已处理过的 selectedDate，用于区分「显式日期跳转」与「无关的数据变更（如勾选已完成/置顶）」
+  const handledSelectedDateRef = useRef<string | null | undefined>(undefined);
   const dateInputRef = useRef<HTMLInputElement>(null);
   const prevRecordCountRef = useRef(records.length);
 
@@ -255,7 +257,13 @@ export const RecordView = () => {
   useLayoutEffect(() => {
     if (recordViewMode !== 'daily-pages' || dayGroups.length === 0) return;
 
-    const requestedDate = selectedDate || visiblePageDateRef.current || todayDateKey;
+    // 仅当 selectedDate 实际发生变化时才视为「显式日期跳转」（从回顾/思维线进入、发送记录回到今天、点击回今天）。
+    // 否则（勾选已完成/置顶等数据变更导致 dayGroups 重建）保持用户当前所在页，
+    // 避免视图被持久化的 selectedDate（典型为今天）强制拽回。
+    const selectedDateChanged = selectedDate !== handledSelectedDateRef.current;
+    const requestedDate = selectedDateChanged
+      ? selectedDate || todayDateKey
+      : visiblePageDateRef.current || todayDateKey;
     let targetIndex = dayGroups.findIndex((group) => group.dateKey === requestedDate);
     if (targetIndex < 0) {
       targetIndex = dayGroups.reduce((closest, group, index) => {
@@ -267,6 +275,7 @@ export const RecordView = () => {
 
     const target = dayGroups[targetIndex];
     setVisiblePageDate(target.dateKey);
+    handledSelectedDateRef.current = selectedDate;
     const frame = window.requestAnimationFrame(() => {
       const scroller = pageScrollerRef.current;
       if (scroller) {
