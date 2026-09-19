@@ -5,6 +5,29 @@ export interface AudioAttachment {
   format?: string; // 'audio/webm' | 'audio/mp4'
 }
 
+export type EisenhowerQuadrant =
+  | 'important-urgent'
+  | 'important-not-urgent'
+  | 'not-important-urgent'
+  | 'not-important-not-urgent';
+
+export type ValueQuadrant =
+  | 'action'
+  | 'investment'
+  | 'firefighting'
+  | 'eliminate';
+
+export interface ValuePriorityProfile {
+  quadrant?: ValueQuadrant;
+  is_routine: boolean;
+  high_value?: boolean;
+  high_delay_loss?: boolean;
+  high_leverage?: boolean;
+  unlocks_work?: boolean;
+  is_container?: boolean;
+  reason?: string;
+}
+
 // Record 数据模型
 export interface RecordItem {
   id: string;
@@ -22,6 +45,8 @@ export interface RecordItem {
   is_pinned?: boolean; // 是否置顶为浮动气泡便签
   pinned_at?: string | null; // 置顶时间戳 (ISO 8601 string)
   is_completed?: boolean; // 是否已完成（兼容旧数据可缺省）
+  eisenhower_quadrant?: EisenhowerQuadrant | null; // 艾森豪矩陣象限；空值表示未加入
+  value_priority?: ValuePriorityProfile | null; // 價值 × 晚做損失新版四象限；與舊矩陣獨立
 }
 
 // Tag 标签数据模型
@@ -45,6 +70,34 @@ export interface HomeLink {
   updatedAt: string;
 }
 
+export interface DeskEntry {
+  id: string;
+  text: string;
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601
+}
+
+export interface DeskDrawer {
+  id: string;
+  title: string;
+  entries: DeskEntry[];
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601 last content or title edit
+  state_updated_at?: string; // ISO 8601 last expand/dim UI state change
+  is_dimmed?: boolean; // tick 按下時讓抽屜變暗
+  expanded_override?: boolean | null;
+  expanded_override_date?: string | null; // YYYY-MM-DD
+}
+
+export interface DeskEdgeRow {
+  id: string;
+  title: string;
+  drawers: DeskDrawer[];
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601 last title/drawer/content edit
+  state_updated_at?: string; // ISO 8601 last expand/dim UI state change
+}
+
 // 包含关联解析的展示记录
 export interface EnrichedRecordItem extends RecordItem {
   thread?: ThreadItem;
@@ -53,4 +106,4 @@ export interface EnrichedRecordItem extends RecordItem {
 }
 
 // 视图切换类型
-export type ActiveTab = 'record' | 'review' | 'thread-detail' | 'widgets';
+export type ActiveTab = 'record' | 'review' | 'matrix' | 'value-matrix' | 'thread-detail' | 'widgets' | 'desk';

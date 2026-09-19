@@ -9,7 +9,7 @@ import {
   SyncProgressStatus,
 } from './types';
 import { isR2Configured, loadR2Settings, loadTombstones, saveTombstoneRecord } from './credentials';
-import { RecordItem, TagItem, ThreadItem, HomeLink } from '../types';
+import { RecordItem, TagItem, ThreadItem, HomeLink, DeskEdgeRow } from '../types';
 
 let inMemoryTombstones: SyncTombstone[] = loadTombstones();
 
@@ -74,6 +74,26 @@ export const flowRepository: FlowRepositoryLike = {
     return prev.length !== useFlowStore.getState().tags.length;
   },
 
+  getDeskRows: () => useFlowStore.getState().deskRows,
+  getDeskRow: (id: string) => useFlowStore.getState().deskRows.find((row) => row.id === id),
+  saveDeskRow: (row: DeskEdgeRow) => {
+    useFlowStore.setState((state) => {
+      const exists = state.deskRows.some((r) => r.id === row.id);
+      return {
+        deskRows: exists
+          ? state.deskRows.map((r) => (r.id === row.id ? row : r))
+          : [...state.deskRows, row],
+      };
+    });
+  },
+  deleteDeskRow: (id: string) => {
+    const prev = useFlowStore.getState().deskRows;
+    useFlowStore.setState((state) => ({
+      deskRows: state.deskRows.filter((row) => row.id !== id),
+    }));
+    return prev.length !== useFlowStore.getState().deskRows.length;
+  },
+
   getHomeLink: () => useFlowStore.getState().homeLink,
   saveHomeLink: (link: HomeLink | null) => useFlowStore.setState({ homeLink: link }),
 
@@ -107,7 +127,8 @@ export function isLocalEmpty(): boolean {
   return (
     (!state.records || state.records.length === 0) &&
     (!state.threads || state.threads.length === 0) &&
-    (!state.tags || state.tags.length === 0)
+    (!state.tags || state.tags.length === 0) &&
+    (!state.deskRows || state.deskRows.length === 0)
   );
 }
 

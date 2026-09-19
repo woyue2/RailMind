@@ -16,6 +16,8 @@ import {
   MoreHorizontal,
   ChevronUp,
   Pin,
+  LayoutGrid,
+  Gem,
 } from 'lucide-react';
 import { EnrichedRecordItem, RecordItem } from '../../types';
 import { formatTime, formatShortDateTime, formatSimpleDate, getLocalDateKey } from '../../utils/dateUtils';
@@ -26,6 +28,9 @@ import { ImageViewerModal } from '../../components/modals/ImageViewerModal';
 import { AudioPlayerPill } from '../../components/common/AudioPlayerPill';
 import { AudioRecorderModal } from '../../components/modals/AudioRecorderModal';
 import { useSystemBack } from '../../hooks/useSystemBack';
+import { EisenhowerQuadrantModal } from '../../components/modals/EisenhowerQuadrantModal';
+import { ValuePriorityWizard } from '../../components/modals/ValuePriorityWizard';
+import { revealElement } from '../../utils/scrollUtils';
 
 interface RecordItemRowProps {
   item: EnrichedRecordItem;
@@ -98,6 +103,8 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Popover state for multiple downstream references
   const [showDownstreamPopover, setShowDownstreamPopover] = useState(false);
+  const [quadrantModalOpen, setQuadrantModalOpen] = useState(false);
+  const [valueWizardOpen, setValueWizardOpen] = useState(false);
 
   useSystemBack(showColorPicker, () => setShowColorPicker(false));
 
@@ -144,9 +151,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
     setSelectedDate(getLocalDateKey(targetRecord.created_at));
     setHighlightRecordId(targetRecord.id);
     window.setTimeout(() => {
-      document.getElementById(`record-${targetRecord.id}`)?.scrollIntoView({
-        behavior: 'smooth', block: 'center', inline: 'nearest',
-      });
+      revealElement(document.getElementById(`record-${targetRecord.id}`));
       window.setTimeout(() => {
         if (useFlowStore.getState().highlightRecordId === targetRecord.id) setHighlightRecordId(null);
       }, 1600);
@@ -327,7 +332,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
             <span className="text-[11.5px] font-mono text-gray-400 mt-0.5">
               {formatTime(item.created_at)}
             </span>
-            <div className="mt-1 flex items-center justify-center gap-0.5">
+            <div className="mt-1 grid grid-cols-2 place-items-center gap-0.5" aria-label="記錄快捷操作">
               <button
                 type="button"
                 onClick={(e) => {
@@ -361,6 +366,45 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 aria-pressed={Boolean(item.is_completed)}
               >
                 <Check className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (item.eisenhower_quadrant) {
+                    updateRecord(item.id, { eisenhower_quadrant: null });
+                  } else {
+                    setQuadrantModalOpen(true);
+                  }
+                }}
+                className={`min-h-6 min-w-6 rounded p-1 transition-all cursor-pointer flex items-center justify-center ${
+                  item.eisenhower_quadrant
+                    ? 'text-violet-600 bg-violet-50 shadow-2xs scale-105'
+                    : 'text-gray-300 hover:text-violet-600 opacity-100 pointer-fine:opacity-0 group-hover:opacity-100'
+                }`}
+                title={item.eisenhower_quadrant ? '從四象限移除' : '加入四象限'}
+                aria-label={item.eisenhower_quadrant ? '從四象限移除' : '加入四象限'}
+                aria-pressed={Boolean(item.eisenhower_quadrant)}
+              >
+                <LayoutGrid className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (item.value_priority) updateRecord(item.id, { value_priority: null });
+                  else setValueWizardOpen(true);
+                }}
+                className={`min-h-6 min-w-6 rounded p-1 transition-all cursor-pointer flex items-center justify-center ${
+                  item.value_priority
+                    ? 'text-fuchsia-600 bg-fuchsia-50 shadow-2xs scale-105'
+                    : 'text-gray-300 hover:text-fuchsia-600 opacity-100 pointer-fine:opacity-0 group-hover:opacity-100'
+                }`}
+                title={item.value_priority ? '從價值四象限移除' : '加入價值四象限'}
+                aria-label={item.value_priority ? '從價值四象限移除' : '加入價值四象限'}
+                aria-pressed={Boolean(item.value_priority)}
+              >
+                <Gem className="h-3 w-3" />
               </button>
             </div>
           </div>
@@ -908,6 +952,23 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
         onClose={() => setAudioModalOpen(false)}
         onSaveAudio={(audio) => updateRecord(item.id, { audio })}
         initialAudio={item.audio}
+      />
+
+      <EisenhowerQuadrantModal
+        isOpen={quadrantModalOpen}
+        title={item.text}
+        current={item.eisenhower_quadrant}
+        onClose={() => setQuadrantModalOpen(false)}
+        onSelect={(quadrant) => {
+          updateRecord(item.id, { eisenhower_quadrant: quadrant });
+          setQuadrantModalOpen(false);
+        }}
+      />
+
+      <ValuePriorityWizard
+        isOpen={valueWizardOpen}
+        record={item}
+        onClose={() => setValueWizardOpen(false)}
       />
 
       {/* Delete Confirmation Modal */}

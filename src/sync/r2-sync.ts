@@ -1,4 +1,4 @@
-import { RecordItem, TagItem, ThreadItem, HomeLink } from '../types';
+import { RecordItem, TagItem, ThreadItem, HomeLink, DeskEdgeRow } from '../types';
 import {
   R2ClientLike,
   SyncReport,
@@ -11,6 +11,21 @@ import { saveTombstoneRecord } from './credentials';
 
 const SYNC_CONCURRENCY = 4;
 let operationQueue: Promise<unknown> = Promise.resolve();
+
+function entityPrefix(entityType: SyncTombstone['entityType']): string {
+  switch (entityType) {
+    case 'record':
+      return 'records';
+    case 'thread':
+      return 'threads';
+    case 'tag':
+      return 'tags';
+    case 'desk':
+      return 'desks';
+    default:
+      throw new Error(`未知同步類型：${entityType}`);
+  }
+}
 
 function enqueue<T>(operation: () => Promise<T>): Promise<T> {
   const result = operationQueue.then(operation, operation);
@@ -106,6 +121,19 @@ export class R2SyncService {
     return enqueue(() => this.deleteEntity('tag', id));
   }
 
+  pushDeskRow(row: DeskEdgeRow): Promise<void> {
+    return enqueue(async () => {
+      const current = this.repository.getDeskRow(row.id);
+      if (current && !this.isDeleted('desk', row.id)) {
+        await this.client.putJson(`desks/${row.id}.json`, current);
+      }
+    });
+  }
+
+  deleteDeskRow(id: string): Promise<void> {
+    return enqueue(() => this.deleteEntity('desk', id));
+  }
+
   sync(options?: SyncOptions): Promise<SyncReport> {
     return enqueue(() => this.runSync(options));
   }
@@ -138,8 +166,7 @@ export class R2SyncService {
     id: string
   ): Promise<void> {
     const tombstone = this.tombstoneFor(entityType, id);
-    const prefix =
-      entityType === 'record' ? 'records' : entityType === 'thread' ? 'threads' : 'tags';
+    const prefix = entityPrefix(entityType);
     await this.client.putJson(`tombstones/${entityType}/${id}.json`, tombstone);
     await this.client.delete(`${prefix}/${id}.json`);
   }
@@ -207,6 +234,23 @@ export class R2SyncService {
         reportProgress
       );
 
+      // 4.5 同步桌邊抽屜
+      await this.syncEntities<DeskEdgeRow>(
+        'desk',
+        'desks/',
+        () => this.repository.getDeskRows(),
+        (id) => this.repository.getDeskRow(id),
+        (item) => this.repository.saveDeskRow(item),
+        (item) =>
+          item.state_updated_at &&
+          new Date(item.state_updated_at).getTime() >
+            new Date(item.updated_at || item.created_at).getTime()
+            ? item.state_updated_at
+            : item.updated_at || item.created_at,
+        report,
+        reportProgress
+      );
+
       // 5. 同步设置
       reportProgress({
         stage: 'settings',
@@ -263,7 +307,7 @@ export class R2SyncService {
     const localTombstones = this.repository.getTombstones();
     const remoteList = await this.client.list('tombstones/');
     const validRemoteItems = remoteList.filter((item) =>
-      /^tombstones\/(record|thread|tag)\/[^/]+\.json$/.test(item.key)
+      /^tombstones\/(record|thread|tag|desk)\/[^/]+\.json$/.test(item.key)
     );
 
     const totalOps = localTombstones.length + validRemoteItems.length;
@@ -309,16 +353,13 @@ export class R2SyncService {
           removed = this.repository.deleteThread(tombstone.entityId);
         } else if (tombstone.entityType === 'tag') {
           removed = this.repository.deleteTag(tombstone.entityId);
+        } else if (tombstone.entityType === 'desk') {
+          removed = this.repository.deleteDeskRow(tombstone.entityId);
         }
 
         if (removed) report.pulled++;
 
-        const prefix =
-          tombstone.entityType === 'record'
-            ? 'records'
-            : tombstone.entityType === 'thread'
-            ? 'threads'
-            : 'tags';
+        const prefix = entityPrefix(tombstone.entityType);
         await this.client.delete(`${prefix}/${tombstone.entityId}.json`).catch(() => undefined);
       },
       tick
@@ -336,10 +377,23 @@ export class R2SyncService {
     reportProgress: (status: SyncProgressStatus) => void
   ): Promise<void> {
     const entityLabel =
-      entityType === 'record' ? '便签记录' : entityType === 'thread' ? '思维线' : '标签';
+      entityType === 'record'
+        ? '便签记录'
+        : entityType === 'thread'
+        ? '思维线'
+        : entityType === 'tag'
+        ? '标签'
+        : '桌邊抽屜';
 
     reportProgress({
-      stage: entityType === 'record' ? 'records' : entityType === 'thread' ? 'threads' : 'tags',
+      stage:
+        entityType === 'record'
+          ? 'records'
+          : entityType === 'thread'
+          ? 'threads'
+          : entityType === 'tag'
+          ? 'tags'
+          : 'desks',
       message: `正在获取云端 ${entityLabel} 列表...`,
       current: 0,
       total: 0,
@@ -363,7 +417,14 @@ export class R2SyncService {
 
     const onTaskStep = () => {
       reportProgress({
-        stage: entityType === 'record' ? 'records' : entityType === 'thread' ? 'threads' : 'tags',
+        stage:
+          entityType === 'record'
+            ? 'records'
+            : entityType === 'thread'
+            ? 'threads'
+            : entityType === 'tag'
+            ? 'tags'
+            : 'desks',
         message: `正在同步 ${entityLabel} (${finishedEntityTasks}/${totalEntityTasks})...`,
         current: finishedEntityTasks,
         total: Math.max(totalEntityTasks, 1),

@@ -1,4 +1,4 @@
-import { RecordItem, TagItem, ThreadItem, HomeLink } from '../types';
+import { RecordItem, TagItem, ThreadItem, HomeLink, DeskEdgeRow } from '../types';
 
 export interface R2Config {
   enabled: boolean;
@@ -17,7 +17,7 @@ export interface SyncReport {
 }
 
 export interface SyncTombstone {
-  entityType: 'record' | 'thread' | 'tag';
+  entityType: 'record' | 'thread' | 'tag' | 'desk';
   entityId: string;
   deletedAt: string;
 }
@@ -28,6 +28,7 @@ export type SyncStage =
   | 'records'
   | 'threads'
   | 'tags'
+  | 'desks'
   | 'settings'
   | 'done'
   | 'error';
@@ -67,6 +68,12 @@ export interface FlowRepositoryLike {
   getTag(id: string): TagItem | undefined;
   saveTag(tag: TagItem): void;
   deleteTag(id: string): boolean;
+
+  getDeskRows(): DeskEdgeRow[];
+  getDeskRow(id: string): DeskEdgeRow | undefined;
+  saveDeskRow(row: DeskEdgeRow): void;
+  deleteDeskRow(id: string): boolean;
+
   getHomeLink(): HomeLink | null;
   saveHomeLink(link: HomeLink | null): void;
 

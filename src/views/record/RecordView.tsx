@@ -2,13 +2,15 @@ import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { RecordItemRow } from './RecordItemRow';
 import { RecordInputBar } from './RecordInputBar';
+import { RecordSearch } from './RecordSearch';
 import { FloatingBubblePin } from '../../components/record/FloatingBubblePin';
 import { ThreadPickerModal } from '../../components/modals/ThreadPickerModal';
 import { TagPickerModal } from '../../components/modals/TagPickerModal';
 import { SettingsModal } from '../../components/modals/SettingsModal';
 import { HomeLinkModal } from '../../components/modals/HomeLinkModal';
-import { getRelativeDayMeta } from '../../utils/dateUtils';
+import { getRelativeDayMeta, getLocalDateKey } from '../../utils/dateUtils';
 import { buildRecordBranches } from '../../utils/recordBranches';
+import { revealElement } from '../../utils/scrollUtils';
 import { EnrichedRecordItem, RecordItem } from '../../types';
 import {
   Calendar,
@@ -24,6 +26,8 @@ import {
   PanelsTopLeft,
   ChevronLeft,
   ChevronRight,
+  LayoutGrid,
+  Rows3,
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
@@ -74,7 +78,6 @@ export const RecordView = () => {
   const [customPageDate, setCustomPageDate] = useState<string | null>(null);
   const visiblePageDateRef = useRef(visiblePageDate);
   const pageScrollFrameRef = useRef<number | null>(null);
-  const pendingAnimatedPageJumpRef = useRef(false);
   // 记录上一次已处理过的 selectedDate，用于区分「显式日期跳转」与「无关的数据变更（如勾选已完成/置顶）」
   const handledSelectedDateRef = useRef<string | null | undefined>(undefined);
   const dateInputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +92,7 @@ export const RecordView = () => {
 
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [homeLinkModalOpen, setHomeLinkModalOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
   const undoDeleteTimerRef = useRef<number | null>(null);
@@ -215,7 +219,7 @@ export const RecordView = () => {
     [dayGroups, visiblePageDate]
   );
 
-  const scrollToPage = (index: number, behavior: ScrollBehavior = 'smooth') => {
+  const scrollToPage = (index: number, behavior: ScrollBehavior = 'auto') => {
     const scroller = pageScrollerRef.current;
     const safeIndex = Math.min(Math.max(index, 0), dayGroups.length - 1);
     const target = dayGroups[safeIndex];
@@ -225,10 +229,24 @@ export const RecordView = () => {
   };
 
   const jumpToDate = (dateKey: string) => {
-    pendingAnimatedPageJumpRef.current = true;
     setCustomPageDate(dateKey);
     visiblePageDateRef.current = dateKey;
     setVisiblePageDate(dateKey);
+  };
+
+  const handleSearchResult = (record: RecordItem) => {
+    const dateKey = getLocalDateKey(record.created_at);
+    if (recordViewMode === 'daily-pages') jumpToDate(dateKey);
+    else useFlowStore.getState().setSelectedDate(dateKey);
+    useFlowStore.getState().setHighlightRecordId(record.id);
+    window.setTimeout(() => {
+      revealElement(document.getElementById(`record-${record.id}`));
+      window.setTimeout(() => {
+        if (useFlowStore.getState().highlightRecordId === record.id) {
+          useFlowStore.getState().setHighlightRecordId(null);
+        }
+      }, 1600);
+    }, 350);
   };
 
   const handlePageScroll = () => {
@@ -281,9 +299,8 @@ export const RecordView = () => {
       if (scroller) {
         scroller.scrollTo({
           left: targetIndex * scroller.clientWidth,
-          behavior: pendingAnimatedPageJumpRef.current ? 'smooth' : 'auto',
+          behavior: 'auto',
         });
-        pendingAnimatedPageJumpRef.current = false;
         visiblePageDateRef.current = target.dateKey;
         setVisiblePageDate(target.dateKey);
       }
@@ -305,17 +322,17 @@ export const RecordView = () => {
     return { todayCount, totalCount };
   }, [dayGroups, records]);
 
-  // Initial mount: Anchor to bottom smoothly (Now / Latest record)
+  // Initial mount: Anchor to bottom (Now / Latest record)
   useLayoutEffect(() => {
     if (recordViewMode === 'timeline' && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
   }, [recordViewMode]);
 
-  // When a new record is added, smoothly scroll to bottom
+  // When a new record is added, glide only if nearby; otherwise jump directly.
   useEffect(() => {
     if (recordViewMode === 'timeline' && records.length > prevRecordCountRef.current) {
-      bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
+      revealElement(bottomAnchorRef.current, 'end');
     }
     prevRecordCountRef.current = records.length;
   }, [records.length, recordViewMode]);
@@ -325,7 +342,7 @@ export const RecordView = () => {
     if (recordViewMode === 'timeline' && selectedDate && scrollContainerRef.current) {
       const targetElement = document.getElementById(`day-group-${selectedDate}`);
       if (targetElement) {
-        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        revealElement(targetElement, 'start');
       }
     }
   }, [selectedDate, recordViewMode]);
@@ -341,7 +358,7 @@ export const RecordView = () => {
   };
 
   const scrollToBottom = () => {
-    bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
+    revealElement(bottomAnchorRef.current, 'end');
     if (selectedDate) {
       resetToTodayRecord();
     }
@@ -407,8 +424,8 @@ export const RecordView = () => {
   return (
     <div className="flex flex-col h-full bg-white relative">
       {/* 1. Header Bar: Date and count + Navigation buttons */}
-      <div className="record-header flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white/95 backdrop-blur-sm sticky top-0 z-20">
-        <div className="flex items-center gap-2">
+      <div className="record-header flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-100 bg-white/95 backdrop-blur-sm sticky top-0 z-40">
+        <div className={`${mobileSearchOpen ? 'hidden md:flex' : 'flex'} min-w-0 items-center gap-2`}>
           {/* Back to Thread or Review if jumped */}
           {fromThreadDetailId ? (
             <button
@@ -434,7 +451,7 @@ export const RecordView = () => {
             <span className="font-bold text-gray-900 text-sm tracking-tight flex items-center gap-1.5">
               <span>超电思</span>
             </span>
-            <span className="text-[11px] text-gray-400 font-medium">
+            <span className="hidden text-[11px] text-gray-400 font-medium md:inline">
               今天 {headerSummary.todayCount} 条 · 共 {headerSummary.totalCount} 条
             </span>
           </div>
@@ -451,8 +468,11 @@ export const RecordView = () => {
           )}
         </div>
 
+        <RecordSearch records={records} onSelect={handleSearchResult}
+          mobileOpen={mobileSearchOpen} setMobileOpen={setMobileSearchOpen} />
+
         {/* Action Group: Sync / Settings / Review */}
-        <div className="flex items-center gap-1.5">
+        <div className={`${mobileSearchOpen ? 'hidden md:flex' : 'flex'} shrink-0 items-center gap-1.5`}>
           {homeLink && (
             <button
               onPointerDown={startLinkPress}
@@ -486,6 +506,30 @@ export const RecordView = () => {
           >
             <BookOpen className="w-3.5 h-3.5 text-gray-600" />
             <span className="font-medium">回顾</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('matrix')}
+            className="min-h-9 flex items-center gap-1 text-xs text-violet-700 hover:text-violet-900 px-2.5 rounded-lg hover:bg-violet-100 bg-violet-50 border border-violet-200/70 transition-colors"
+            title="打開重要 × 緊急四象限"
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            <span className="hidden font-medium sm:inline">四象限</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('value-matrix')}
+            className="min-h-9 flex items-center gap-1 text-xs text-fuchsia-700 hover:text-fuchsia-900 px-2.5 rounded-lg hover:bg-fuchsia-100 bg-fuchsia-50 border border-fuchsia-200/70 transition-colors"
+            title="打開價值 × 晚做損失四象限"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            <span className="hidden font-medium sm:inline">價值象限</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('desk')}
+            className="min-h-9 flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-900 px-2.5 rounded-lg hover:bg-emerald-100 bg-emerald-50 border border-emerald-200/70 transition-colors"
+            title="打開桌邊抽屜"
+          >
+            <Rows3 className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="hidden font-medium sm:inline">桌邊</span>
           </button>
         </div>
       </div>
@@ -594,7 +638,7 @@ export const RecordView = () => {
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto px-2 py-2 relative scroll-smooth space-y-4"
+          className="flex-1 overflow-y-auto px-2 py-2 relative space-y-4"
         >
           {records.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center text-gray-400">
@@ -759,9 +803,7 @@ export const RecordView = () => {
         setVisiblePageDate(todayDateKey);
         useFlowStore.getState().setHighlightRecordId(id);
         window.setTimeout(() => {
-          document.getElementById(`record-${id}`)?.scrollIntoView({
-            behavior: 'smooth', block: 'center', inline: 'nearest',
-          });
+          revealElement(document.getElementById(`record-${id}`));
           window.setTimeout(() => {
             if (useFlowStore.getState().highlightRecordId === id) useFlowStore.getState().setHighlightRecordId(null);
           }, 1600);

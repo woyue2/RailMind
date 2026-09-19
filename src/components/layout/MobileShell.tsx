@@ -1,12 +1,15 @@
 import { useEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
-import { BookOpen, GitFork, PenTool } from 'lucide-react';
+import { BookOpen, GitFork, PenTool, LayoutGrid, Gem, Rows3 } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { RecordView } from '../../views/record/RecordView';
 import { ReviewView } from '../../views/ReviewView';
 import { ThreadDetailView } from '../../views/ThreadDetailView';
 import { WidgetSimulatorView } from '../../views/WidgetSimulatorView';
+import { EisenhowerMatrixView } from '../../views/EisenhowerMatrixView';
+import { ValuePriorityMatrixView } from '../../views/ValuePriorityMatrixView';
+import { DeskEdgeView } from '../../views/DeskEdgeView';
 import { SyncProgressOverlay } from '../common/SyncProgressOverlay';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
 import { triggerR2Sync } from '../../sync';
@@ -56,7 +59,7 @@ export const MobileShell = () => {
         }
       }
 
-      if (activeTab === 'review' || activeTab === 'widgets') {
+      if (activeTab === 'review' || activeTab === 'matrix' || activeTab === 'value-matrix' || activeTab === 'widgets' || activeTab === 'desk') {
         setActiveTab('record');
         return;
       }
@@ -90,7 +93,7 @@ export const MobileShell = () => {
           <div><h1 className="font-semibold text-lg tracking-tight">RailMind</h1><p className="text-xs text-slate-400">留住想法，串起思绪</p></div>
         </div>
         <nav className="space-y-1">
-          {([{ id: 'record', label: '记录', icon: PenTool }, { id: 'review', label: '回顾', icon: BookOpen }] as const).map(({ id, label, icon: Icon }) => (
+          {([{ id: 'record', label: '记录', icon: PenTool }, { id: 'review', label: '回顾', icon: BookOpen }, { id: 'matrix', label: '四象限', icon: LayoutGrid }, { id: 'value-matrix', label: '價值四象限', icon: Gem }, { id: 'desk', label: '桌邊', icon: Rows3 }] as const).map(({ id, label, icon: Icon }) => (
             <button key={id} type="button" onClick={() => setActiveTab(id)} aria-current={activeTab === id ? 'page' : undefined}
               className={`w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors ${activeTab === id ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'}`}>
               <Icon className="h-4 w-4" />{label}
@@ -114,8 +117,11 @@ export const MobileShell = () => {
         <div className="relative flex min-h-0 min-w-0 w-full max-w-5xl flex-col overflow-hidden bg-white md:rounded-2xl md:border md:border-slate-200 md:shadow-sm">
           {activeTab === 'record' && <RecordView />}
           {activeTab === 'review' && <ReviewView />}
+          {activeTab === 'matrix' && <EisenhowerMatrixView />}
+          {activeTab === 'value-matrix' && <ValuePriorityMatrixView />}
           {activeTab === 'thread-detail' && <ThreadDetailView />}
           {activeTab === 'widgets' && <WidgetSimulatorView />}
+          {activeTab === 'desk' && <DeskEdgeView />}
         </div>
       </main>
     </div>

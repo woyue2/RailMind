@@ -1,6 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { RecordItem, TagItem, ThreadItem, EnrichedRecordItem, HomeLink, AudioAttachment } from '../types';
+import {
+  RecordItem,
+  TagItem,
+  ThreadItem,
+  EnrichedRecordItem,
+  HomeLink,
+  AudioAttachment,
+  ActiveTab,
+  ValuePriorityProfile,
+  DeskEdgeRow,
+  DeskDrawer,
+  DeskEntry,
+} from '../types';
 import { generateId, getLocalDateKey } from '../utils/dateUtils';
 import { pickRandomQuoteColor } from '../utils/quoteColors';
 import { createR2SyncService } from '../sync';
@@ -20,14 +32,35 @@ function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) 
   }
 }
 
+function triggerDeskRowSync(rowId: string, deleted = false) {
+  if (!loadR2Settings().enabled) return;
+  const sync = createR2SyncService();
+  if (!sync) return;
+  if (deleted) {
+    sync.deleteDeskRow(rowId).catch(() => {});
+    return;
+  }
+  const row = useFlowStore.getState().deskRows.find((item) => item.id === rowId);
+  if (row) {
+    sync.pushDeskRow(row).catch(() => {});
+  }
+}
+
+function deskRowIdForDrawer(drawerId: string): string {
+  return useFlowStore.getState().deskRows.find((row) =>
+    row.drawers.some((drawer) => drawer.id === drawerId)
+  )?.id ?? '';
+}
+
 interface FlowState {
   homeLink: HomeLink | null;
   records: RecordItem[];
   tags: TagItem[];
   threads: ThreadItem[];
+  deskRows: DeskEdgeRow[];
 
   // Navigation & UI state
-  activeTab: 'record' | 'review' | 'thread-detail' | 'widgets';
+  activeTab: ActiveTab;
   selectedThreadId: string | null;
   selectedDate: string | null; // filter date in RecordView (null = default today)
   recordViewMode: 'timeline' | 'daily-pages';
@@ -54,11 +87,12 @@ interface FlowState {
       imgs?: string[];
       bg_color?: string | null;
       audio?: AudioAttachment | null;
+      value_priority?: ValuePriorityProfile | null;
     }
   ) => RecordItem;
   updateRecord: (
     id: string,
-    updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id' | 'imgs' | 'bg_color' | 'audio' | 'is_pinned' | 'pinned_at'>>
+    updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id' | 'imgs' | 'bg_color' | 'audio' | 'is_pinned' | 'pinned_at' | 'eisenhower_quadrant' | 'value_priority'>>
   ) => void;
   deleteRecord: (id: string) => RecordItem[];
   restoreRecords: (records: RecordItem[]) => void;
@@ -78,7 +112,7 @@ interface FlowState {
   getTagRecords: (tagId: string) => EnrichedRecordItem[];
 
   // Navigation actions
-  setActiveTab: (tab: 'record' | 'review' | 'thread-detail' | 'widgets') => void;
+  setActiveTab: (tab: ActiveTab) => void;
   openThreadDetail: (threadId: string) => void;
   backFromThreadDetail: () => void;
   openDateRecord: (dateStr: string) => void;
@@ -96,6 +130,19 @@ interface FlowState {
   setDailyPageDateHeaderBackgroundOpacity: (opacity: number) => void;
   setHomeLink: (link: { shownName: string; href: string } | null) => void;
   resetToDefaultData: () => void;
+
+  // Actions for DeskEdge rows / drawers / entries
+  addDeskRow: () => DeskEdgeRow;
+  updateDeskRowTitle: (rowId: string, title: string) => void;
+  deleteDeskRow: (rowId: string) => void;
+  addDeskDrawer: (rowId: string) => DeskDrawer;
+  updateDeskDrawerTitle: (drawerId: string, title: string) => void;
+  deleteDeskDrawer: (drawerId: string) => void;
+  addDeskEntry: (drawerId: string, text: string) => void;
+  updateDeskEntry: (drawerId: string, entryId: string, text: string) => void;
+  deleteDeskEntry: (drawerId: string, entryId: string) => void;
+  toggleDeskDrawer: (drawerId: string, expanded: boolean) => void;
+  toggleDeskDrawerDimmed: (drawerId: string) => void;
 }
 
 interface ThreadDetailReturnContext {
@@ -305,6 +352,7 @@ export const useFlowStore = create<FlowState>()(
       records: defaultRecords,
       tags: defaultTags,
       threads: defaultThreads,
+      deskRows: [],
       homeLink: null,
 
       activeTab: 'record',
@@ -356,6 +404,7 @@ export const useFlowStore = create<FlowState>()(
           imgs: options.imgs && options.imgs.length > 0 ? options.imgs : undefined,
           bg_color: options.bg_color || null,
           audio: options.audio || undefined,
+          value_priority: options.value_priority || undefined,
         };
 
         set((state) => {
@@ -768,11 +817,249 @@ export const useFlowStore = create<FlowState>()(
         triggerAutoSync((sync) => sync?.pushHomeLink(nextLink));
       },
 
+      addDeskRow: () => {
+        const nowIso = new Date().toISOString();
+        const newRow: DeskEdgeRow = {
+          id: generateId(),
+          title: `桌邊 ${get().deskRows.length + 1}`,
+          drawers: [],
+          created_at: nowIso,
+          updated_at: nowIso,
+        };
+        set((state) => ({ deskRows: [...state.deskRows, newRow] }));
+        triggerDeskRowSync(newRow.id);
+        return newRow;
+      },
+
+      updateDeskRowTitle: (rowId, title) => {
+        const trimmed = title.trim();
+        if (!trimmed) return;
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          deskRows: state.deskRows.map((row) =>
+            row.id === rowId ? { ...row, title: trimmed, updated_at: nowIso } : row
+          ),
+        }));
+        triggerDeskRowSync(rowId);
+      },
+
+      deleteDeskRow: (rowId) => {
+        set((state) => ({
+          deskRows: state.deskRows.filter((row) => row.id !== rowId),
+        }));
+        triggerDeskRowSync(rowId, true);
+      },
+
+      addDeskDrawer: (rowId) => {
+        const nowIso = new Date().toISOString();
+        let newDrawer: DeskDrawer | null = null;
+        set((state) => ({
+          deskRows: state.deskRows.map((row) => {
+            if (row.id !== rowId) return row;
+            newDrawer = {
+              id: generateId(),
+              title: `抽屜 ${row.drawers.length + 1}`,
+              entries: [],
+              created_at: nowIso,
+              updated_at: nowIso,
+            };
+            return {
+              ...row,
+              drawers: [...row.drawers, newDrawer],
+              updated_at: nowIso,
+            };
+          }),
+        }));
+        triggerDeskRowSync(rowId);
+        return newDrawer!;
+      },
+
+      updateDeskDrawerTitle: (drawerId, title) => {
+        const trimmed = title.trim();
+        if (!trimmed) return;
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          deskRows: state.deskRows.map((row) => {
+            const drawer = row.drawers.find((d) => d.id === drawerId);
+            return drawer
+              ? {
+                  ...row,
+                  drawers: row.drawers.map((d) =>
+                    d.id === drawerId ? { ...d, title: trimmed, updated_at: nowIso } : d
+                  ),
+                  updated_at: nowIso,
+                }
+              : row;
+          }),
+        }));
+        const rowId = deskRowIdForDrawer(drawerId);
+        if (rowId) triggerDeskRowSync(rowId);
+      },
+
+      deleteDeskDrawer: (drawerId) => {
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          deskRows: state.deskRows.map((row) =>
+            row.drawers.some((d) => d.id === drawerId)
+              ? {
+                  ...row,
+                  drawers: row.drawers.filter((d) => d.id !== drawerId),
+                  updated_at: nowIso,
+                }
+              : row
+          ),
+        }));
+        const rowId = deskRowIdForDrawer(drawerId);
+        if (rowId) triggerDeskRowSync(rowId);
+      },
+
+      addDeskEntry: (drawerId, text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const nowIso = new Date().toISOString();
+        const entry: DeskEntry = {
+          id: generateId(),
+          text: trimmed,
+          created_at: nowIso,
+          updated_at: nowIso,
+        };
+        set((state) => ({
+          deskRows: state.deskRows.map((row) => {
+            const drawer = row.drawers.find((d) => d.id === drawerId);
+            return drawer
+              ? {
+                  ...row,
+                  drawers: row.drawers.map((d) =>
+                    d.id === drawerId
+                      ? { ...d, entries: [...d.entries, entry], updated_at: nowIso }
+                      : d
+                  ),
+                  updated_at: nowIso,
+                }
+              : row;
+          }),
+        }));
+        const rowId = deskRowIdForDrawer(drawerId);
+        if (rowId) triggerDeskRowSync(rowId);
+      },
+
+      updateDeskEntry: (drawerId, entryId, text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          deskRows: state.deskRows.map((row) => {
+            const drawer = row.drawers.find((d) => d.id === drawerId);
+            return drawer
+              ? {
+                  ...row,
+                  drawers: row.drawers.map((d) =>
+                    d.id === drawerId
+                      ? {
+                          ...d,
+                          entries: d.entries.map((e) =>
+                            e.id === entryId ? { ...e, text: trimmed, updated_at: nowIso } : e
+                          ),
+                          updated_at: nowIso,
+                        }
+                      : d
+                  ),
+                  updated_at: nowIso,
+                }
+              : row;
+          }),
+        }));
+        const rowId = deskRowIdForDrawer(drawerId);
+        if (rowId) triggerDeskRowSync(rowId);
+      },
+
+      deleteDeskEntry: (drawerId, entryId) => {
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          deskRows: state.deskRows.map((row) => {
+            const drawer = row.drawers.find((d) => d.id === drawerId);
+            return drawer
+              ? {
+                  ...row,
+                  drawers: row.drawers.map((d) =>
+                    d.id === drawerId
+                      ? {
+                          ...d,
+                          entries: d.entries.filter((e) => e.id !== entryId),
+                          updated_at: nowIso,
+                        }
+                      : d
+                  ),
+                  updated_at: nowIso,
+                }
+              : row;
+          }),
+        }));
+        const rowId = deskRowIdForDrawer(drawerId);
+        if (rowId) triggerDeskRowSync(rowId);
+      },
+
+      toggleDeskDrawer: (drawerId, expanded) => {
+        const nowIso = new Date().toISOString();
+        const todayKey = getLocalDateKey(new Date().toISOString());
+        set((state) => ({
+          deskRows: state.deskRows.map((row) => {
+            if (!row.drawers.some((d) => d.id === drawerId)) return row;
+            return {
+              ...row,
+              drawers: row.drawers.map((d) => {
+                if (d.id === drawerId) {
+                  return {
+                    ...d,
+                    expanded_override: expanded,
+                    expanded_override_date: todayKey,
+                    state_updated_at: nowIso,
+                  };
+                }
+                if (expanded) {
+                  return {
+                    ...d,
+                    expanded_override: false,
+                    expanded_override_date: todayKey,
+                    state_updated_at: nowIso,
+                  };
+                }
+                return d;
+              }),
+              state_updated_at: nowIso,
+            };
+          }),
+        }));
+        const rowId = deskRowIdForDrawer(drawerId);
+        if (rowId) triggerDeskRowSync(rowId);
+      },
+
+      toggleDeskDrawerDimmed: (drawerId) => {
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          deskRows: state.deskRows.map((row) => {
+            if (!row.drawers.some((d) => d.id === drawerId)) return row;
+            return {
+              ...row,
+              drawers: row.drawers.map((d) =>
+                d.id === drawerId
+                  ? { ...d, is_dimmed: !d.is_dimmed, state_updated_at: nowIso }
+                  : d
+              ),
+              state_updated_at: nowIso,
+            };
+          }),
+        }));
+        const rowId = deskRowIdForDrawer(drawerId);
+        if (rowId) triggerDeskRowSync(rowId);
+      },
+
       resetToDefaultData: () => {
         set({
           records: defaultRecords,
           tags: defaultTags,
           threads: defaultThreads,
+          deskRows: [],
           activeBranchParentId: null,
           quickSelectedThreadId: null,
           selectedThreadId: null,
@@ -788,7 +1075,7 @@ export const useFlowStore = create<FlowState>()(
       // v3 prevents previously persisted development fixtures from leaking
       // into a production APK after upgrading from the prototype build.
       name: 'flow-01-storage-v3',
-      version: 5,
+      version: 6,
       // Navigation origin is session-only; keep the existing persistence behavior
       // for the rest of the store unchanged.
       partialize: (state): FlowState => ({ ...state, threadDetailReturnContext: null }),
@@ -800,6 +1087,7 @@ export const useFlowStore = create<FlowState>()(
           recordViewMode: state.recordViewMode ?? 'timeline',
           timelineDateHeaderBackgroundOpacity: state.timelineDateHeaderBackgroundOpacity ?? 30,
           dailyPageDateHeaderBackgroundOpacity: state.dailyPageDateHeaderBackgroundOpacity ?? 30,
+          deskRows: state.deskRows ?? [],
           records: (state.records ?? []).map((record) => ({
             ...record,
             updated_at: record.updated_at ?? record.created_at,

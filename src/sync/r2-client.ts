@@ -207,7 +207,8 @@ export class R2Client implements R2ClientLike {
       if (controller.signal.aborted) {
         throw new Error(`R2 请求超时（${DIRECT_REQUEST_TIMEOUT_MS / 1000}s）`);
       }
-      throw error;
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to fetch ${url.toString()} — ${reason}`);
     } finally {
       clearTimeout(timer);
     }
@@ -282,7 +283,14 @@ export class R2Client implements R2ClientLike {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
-        return { ok: false, message: '无法连接 R2 端点，请检查 Account ID 或 Endpoint' };
+        const origin =
+          typeof window !== 'undefined' && window.location?.origin
+            ? `；当前页面来源：${window.location.origin}`
+            : '';
+        return {
+          ok: false,
+          message: `无法连接 R2 端点：${this.endpoint}。请检查网络/Endpoint、Account ID，以及 R2 CORS 是否允许当前来源${origin}`,
+        };
       }
       return { ok: false, message: `连接失败：${message}` };
     }

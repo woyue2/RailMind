@@ -3,6 +3,7 @@ import { Pin, X, Volume2, Image as ImageIcon } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { RecordItem } from '../../types';
 import { getLocalDateKey } from '../../utils/dateUtils';
+import { revealElement } from '../../utils/scrollUtils';
 
 export const FloatingBubblePin: React.FC = () => {
   const records = useFlowStore((s) => s.records);
@@ -98,7 +99,7 @@ export const FloatingBubblePin: React.FC = () => {
     const elementId = `record-${record.id}`;
     const el = document.getElementById(elementId);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      revealElement(el);
       setHighlightRecordId(record.id);
       setTimeout(() => {
         setHighlightRecordId(null);
@@ -110,7 +111,7 @@ export const FloatingBubblePin: React.FC = () => {
       setTimeout(() => {
         const targetEl = document.getElementById(elementId);
         if (targetEl) {
-          targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          revealElement(targetEl);
         }
         setTimeout(() => {
           setHighlightRecordId(null);
