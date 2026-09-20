@@ -87,13 +87,18 @@ function stripHeaviest(payload: PersistedShape, stage: 'images' | 'audio'): bool
   return changed;
 }
 
-export const quotaSafeStorage: PersistStorage<unknown> = (() => {
-  const base = createJSONStorage(() => localStorage)!;
+/**
+ * 泛型工厂：让调用方声明自己的持久化形状（如白名单后的 `PersistedFlowState`），
+ * 从而避免在 persist 配置处做 `as PersistStorage<...>` 强转。
+ * 运行期实现与形状无关（只结构性读取 `state.records`），故 S 纯属类型层参数。
+ */
+export function createQuotaSafeStorage<S>(): PersistStorage<S> {
+  const base = createJSONStorage<S>(() => localStorage)!;
 
   const write = (
-    baseSetItem: (name: string, value: StorageValue<unknown>) => void,
+    baseSetItem: (name: string, value: StorageValue<S>) => void,
     name: string,
-    value: StorageValue<unknown>
+    value: StorageValue<S>
   ) => {
     try {
       baseSetItem(name, value);
@@ -152,10 +157,10 @@ export const quotaSafeStorage: PersistStorage<unknown> = (() => {
   };
 
   return {
-    getItem: (name) => base.getItem(name) as StorageValue<unknown> | null,
+    getItem: (name) => base.getItem(name) as StorageValue<S> | null,
     setItem: (name, value) => {
       write((key, val) => base.setItem(key, val), name, value);
     },
     removeItem: (name) => base.removeItem(name),
   };
-})();
+}

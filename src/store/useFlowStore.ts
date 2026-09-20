@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist, type PersistStorage } from 'zustand/middleware';
+import { persist, type PersistOptions } from 'zustand/middleware';
 import {
   RecordItem,
   TagItem,
@@ -17,7 +17,7 @@ import { generateId, getLocalDateKey } from '../utils/dateUtils';
 import { pickRandomQuoteColor } from '../utils/quoteColors';
 import { createR2SyncService, reportR2SyncFailure } from '../sync';
 import { loadR2Settings, removeTombstoneRecords } from '../sync/credentials';
-import { quotaSafeStorage } from './quotaSafeStorage';
+import { createQuotaSafeStorage } from './quotaSafeStorage';
 
 function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) => Promise<void> | void) {
   if (!loadR2Settings().enabled) return;
@@ -207,6 +207,77 @@ interface ThreadDetailReturnContext {
  * 移除某个 Tab（如 v7 的 'widgets'）后，老数据里的该值会让所有渲染分支失配 → 白屏。
  */
 const VALID_TABS: ActiveTab[] = ['record', 'review', 'matrix', 'value-matrix', 'thread-detail', 'desk'];
+
+/**
+ * persist 白名单：只持久化「数据」与「跨会话有意义的导航/偏好」字段。
+ *
+ * 为什么需要显式列举而不是 `{ ...state }`：
+ * 1. `{ ...state }` 会把全部 action 函数也塞进 persist 输入，`JSON.stringify` 会静默
+ *    丢弃函数，但每次都白跑一遍全量遍历（action 占 state 的绝大多数键）。
+ * 2. 更重要的是，它会把**瞬时交互态**一并写盘。典型后果：在「正在分支/引用」状态下
+ *    关闭 App，重开后 UI 仍停留在分支/引用模式，且指向的记录可能已被删除。
+ *
+ * 注意：本白名单外的字段在 rehydrate 时回落到初始值（见 (set, get) => ({...}) 的
+ * `activeBranchParentId: null` 等），这正是我们想要的。**不改变已存数据的结构**，
+ * 因此无需 bump persist version / 老用户无需 migrate。
+ */
+const PERSISTED_KEYS = [
+  // —— 数据 ——
+  'homeLink',
+  'records',
+  'tags',
+  'threads',
+  'deskRows',
+  // —— 导航（跨会话恢复位置有意义）——
+  'activeTab',
+  'selectedThreadId',
+  'selectedDate',
+  'fromReviewDate',
+  'fromThreadDetailId',
+  // —— 用户偏好 ——
+  'recordViewMode',
+  'timelineDateHeaderBackgroundOpacity',
+  'dailyPageDateHeaderBackgroundOpacity',
+] as const satisfies readonly (keyof FlowState)[];
+
+type PersistedFlowState = Pick<FlowState, (typeof PERSISTED_KEYS)[number]>;
+
+function selectPersistedState(state: FlowState): PersistedFlowState {
+  const picked = {} as PersistedFlowState;
+  for (const key of PERSISTED_KEYS) {
+    // 逐键拷贝：类型安全地只挑白名单字段。
+    (picked as Record<string, unknown>)[key] = state[key];
+  }
+  return picked;
+}
+
+/**
+ * 把任意来源（老版本 localStorage / migrate 输入）的持久化片段整理成
+ * 「白名单内、且字段齐全」的持久化对象。
+ *
+ * 两处复用，保证语义一致：
+ * - `migrate`：版本号变化时的迁移路径；
+ * - `merge`：**每次 rehydrate** 都会走，因此即便用户版本号未变（无需 migrate），
+ *   历史遗留的瞬时交互态也不会被读回 store —— 这是纯靠 migrate 覆盖不到的场景。
+ */
+function normalizePersistedState(persistedState: unknown): PersistedFlowState {
+  const state = (persistedState ?? {}) as Partial<FlowState>;
+  const hydrated: FlowState = {
+    ...state,
+    activeTab: VALID_TABS.includes(state.activeTab as ActiveTab)
+      ? (state.activeTab as ActiveTab)
+      : 'record',
+    recordViewMode: state.recordViewMode ?? 'timeline',
+    timelineDateHeaderBackgroundOpacity: state.timelineDateHeaderBackgroundOpacity ?? 30,
+    dailyPageDateHeaderBackgroundOpacity: state.dailyPageDateHeaderBackgroundOpacity ?? 30,
+    deskRows: state.deskRows ?? [],
+    records: (state.records ?? []).map((record) => ({
+      ...record,
+      updated_at: record.updated_at ?? record.created_at,
+    })),
+  } as FlowState;
+  return selectPersistedState(hydrated);
+}
 
 export const useFlowStore = create<FlowState>()(
   persist(
@@ -1088,28 +1159,22 @@ export const useFlowStore = create<FlowState>()(
       version: 7,
       // K9：单 key 承载全量数据，图片/语音以 base64 内嵌，接近 5MB 配额时
       // 原实现会静默丢数据。quotaSafeStorage 在超配额时逐级剥离附件保住元数据。
-      storage: quotaSafeStorage as PersistStorage<FlowState>,
-      // Navigation origin is session-only; keep the existing persistence behavior
-      // for the rest of the store unchanged.
-      partialize: (state): FlowState => ({ ...state, threadDetailReturnContext: null }),
-      migrate: (persistedState) => {
-        const state = persistedState as Partial<FlowState>;
-        return {
-          ...state,
-          threadDetailReturnContext: null,
-          activeTab: VALID_TABS.includes(state.activeTab as ActiveTab)
-            ? (state.activeTab as ActiveTab)
-            : 'record',
-          recordViewMode: state.recordViewMode ?? 'timeline',
-          timelineDateHeaderBackgroundOpacity: state.timelineDateHeaderBackgroundOpacity ?? 30,
-          dailyPageDateHeaderBackgroundOpacity: state.dailyPageDateHeaderBackgroundOpacity ?? 30,
-          deskRows: state.deskRows ?? [],
-          records: (state.records ?? []).map((record) => ({
-            ...record,
-            updated_at: record.updated_at ?? record.created_at,
-          })),
-        } as FlowState;
-      },
-    }
+      // quotaSafeStorage 是泛型工厂：显式指定持久化形状，无需在此强转。
+      storage: createQuotaSafeStorage<PersistedFlowState>(),
+      // 白名单持久化：排除全部 action 与瞬时交互态（activeBranchParentId /
+      // activeQuoteRecordId / quickSelectedThreadId / highlightRecordId /
+      // threadDetailReturnContext）。字段集合变化不影响已存数据结构 → 无需 bump version。
+      //
+      // 注意 partialize 只管「写」，读回来要靠下面的 merge 过滤（老用户已 v7，migrate 不会跑）。
+      partialize: selectPersistedState,
+      migrate: (persistedState) => normalizePersistedState(persistedState),
+      // 关键：光有 migrate 不够 —— migrate 只在 version 不等时跑。老用户已经是 v7，
+      // 其 localStorage 里可能仍残留旧实现写入的瞬时交互态；靠 merge 在**每次**
+      // rehydrate 时过滤，才能保证这类脏字段不会被读回 store。
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...normalizePersistedState(persistedState),
+      }),
+    } satisfies PersistOptions<FlowState, PersistedFlowState>
   )
 );
