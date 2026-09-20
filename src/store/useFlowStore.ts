@@ -176,7 +176,6 @@ interface FlowState {
   setTimelineDateHeaderBackgroundOpacity: (opacity: number) => void;
   setDailyPageDateHeaderBackgroundOpacity: (opacity: number) => void;
   setHomeLink: (link: { shownName: string; href: string } | null) => void;
-  resetToDefaultData: () => void;
 
   // Actions for DeskEdge rows / drawers / entries
   addDeskRow: () => DeskEdgeRow;
@@ -203,199 +202,6 @@ interface ThreadDetailReturnContext {
   fromThreadDetailId: string | null;
 }
 
-// Initial Mock Seed Data
-const initialTags: TagItem[] = [
-  { id: 'tag_1', name: '情绪化', color: '#F87171' }, // Red-400
-  { id: 'tag_2', name: '跟风', color: '#FB923C' },   // Orange-400
-  { id: 'tag_3', name: '认真规划', color: '#34D399' }, // Emerald-400
-  { id: 'tag_4', name: '随想', color: '#818CF8' },   // Indigo-400
-  { id: 'tag_5', name: '工作复盘', color: '#60A5FA' }, // Blue-400
-  { id: 'tag_6', name: '灵感火花', color: '#F472B6' }, // Pink-400
-];
-
-const initialThreads: ThreadItem[] = [
-  {
-    id: 'thread_concert',
-    title: '演唱会',
-    created_at: '2026-08-26T09:40:00.000Z',
-    last_used_at: '2026-10-04T18:30:00.000Z',
-  },
-  {
-    id: 'thread_japanese',
-    title: '学日语',
-    created_at: '2026-07-10T10:00:00.000Z',
-    last_used_at: '2026-08-26T08:30:00.000Z',
-  },
-  {
-    id: 'thread_career',
-    title: '要不要辞职',
-    created_at: '2026-08-01T15:00:00.000Z',
-    last_used_at: '2026-08-25T21:00:00.000Z',
-  },
-  {
-    id: 'thread_side_project',
-    title: '副业计划',
-    created_at: '2026-08-15T12:00:00.000Z',
-    last_used_at: '2026-08-24T14:15:00.000Z',
-  },
-  {
-    id: 'thread_reading',
-    title: '深度阅读',
-    created_at: '2026-08-10T09:00:00.000Z',
-    last_used_at: '2026-08-22T19:00:00.000Z',
-  },
-  {
-    id: 'thread_fitness',
-    title: '跑步健身',
-    created_at: '2026-07-20T07:00:00.000Z',
-    last_used_at: '2026-08-20T06:30:00.000Z',
-  },
-];
-
-const initialRecords: RecordItem[] = [
-  // 8月26日 (Today) 主场景
-  {
-    id: 'rec_1',
-    text: '先随便记记，今天感觉一般',
-    created_at: '2026-08-26T09:12:00.000Z',
-    parent_id: null,
-    tag_id: null,
-    thread_id: null,
-  },
-  {
-    id: 'rec_2',
-    text: '10月3日去看演唱会，抢到票了！',
-    created_at: '2026-08-26T09:40:00.000Z',
-    parent_id: null,
-    tag_id: null,
-    thread_id: 'thread_concert',
-    imgs: ['/mock_pic.png'],
-  },
-  {
-    id: 'rec_3',
-    text: '因为B更快能看到效果',
-    created_at: '2026-08-26T10:05:00.000Z',
-    parent_id: 'rec_2',
-    tag_id: null,
-    thread_id: null,
-  },
-  {
-    id: 'rec_4',
-    text: '那就先定第一步',
-    created_at: '2026-08-26T10:40:00.000Z',
-    parent_id: 'rec_3',
-    tag_id: null,
-    thread_id: null,
-  },
-  {
-    id: 'rec_5',
-    text: '不过也可能三分钟热度',
-    created_at: '2026-08-26T10:20:00.000Z',
-    parent_id: 'rec_2',
-    tag_id: 'tag_1', // [情绪化]
-    thread_id: null,
-  },
-  {
-    id: 'rec_6',
-    text: '中午又觉得A也没那么差',
-    created_at: '2026-08-26T11:15:00.000Z',
-    parent_id: null,
-    tag_id: null,
-    thread_id: null,
-  },
-  {
-    id: 'rec_7',
-    text: '下午抽空背了20个单词，感觉还行',
-    created_at: '2026-08-26T16:20:00.000Z',
-    parent_id: null,
-    tag_id: 'tag_3', // [认真规划]
-    thread_id: 'thread_japanese',
-  },
-
-  // 跨时间思维线记录 (演示演唱会从期待到现场回顾)
-  {
-    id: 'rec_c2',
-    text: '开始期待演唱会了。',
-    created_at: '2026-09-12T14:30:00.000Z',
-    parent_id: null,
-    tag_id: null,
-    thread_id: 'thread_concert',
-  },
-  {
-    id: 'rec_c3',
-    text: '今天真的去看了。',
-    created_at: '2026-10-03T20:00:00.000Z',
-    parent_id: null,
-    tag_id: null,
-    thread_id: 'thread_concert',
-  },
-  {
-    id: 'rec_c4',
-    text: '现场比我想象中差一点。',
-    created_at: '2026-10-04T18:30:00.000Z',
-    parent_id: null,
-    tag_id: null,
-    thread_id: 'thread_concert',
-  },
-
-  // 历史记录 (供回顾页展示)
-  {
-    id: 'rec_past_1',
-    text: '想换方向做B',
-    created_at: '2026-08-19T09:40:00.000Z',
-    parent_id: null,
-    tag_id: 'tag_2', // [跟风]
-    thread_id: 'thread_side_project',
-  },
-  {
-    id: 'rec_past_fit',
-    text: '早起晨跑5公里，出了一身汗很爽',
-    created_at: '2026-08-20T06:30:00.000Z',
-    parent_id: null,
-    tag_id: 'tag_4', // [随想]
-    thread_id: 'thread_fitness',
-  },
-  {
-    id: 'rec_past_2',
-    text: '看到朋友做副业月入几万',
-    created_at: '2026-08-21T21:02:00.000Z',
-    parent_id: null,
-    tag_id: 'tag_2', // [跟风]
-    thread_id: 'thread_side_project',
-  },
-  {
-    id: 'rec_past_read',
-    text: '读完《原则》第一部分，关于现实与沉淀的思考',
-    created_at: '2026-08-22T19:00:00.000Z',
-    parent_id: null,
-    tag_id: 'tag_5', // [工作复盘]
-    thread_id: 'thread_reading',
-  },
-  {
-    id: 'rec_past_3',
-    text: '又想换方向了，还是得脚踏实地',
-    created_at: '2026-08-24T14:15:00.000Z',
-    parent_id: null,
-    tag_id: 'tag_2', // [跟风]
-    thread_id: 'thread_side_project',
-  },
-  {
-    id: 'rec_past_4',
-    text: '跟领导提了调岗的想法，等答复',
-    created_at: '2026-08-25T17:30:00.000Z',
-    parent_id: null,
-    tag_id: 'tag_3', // [认真规划]
-    thread_id: 'thread_career',
-  },
-];
-
-// Demo data is intentionally development-only. Production APKs start clean;
-// the desktop debug shell can still use the complete fixture set.
-const isMockEnabled = import.meta.env.DEV;
-const defaultRecords = isMockEnabled ? initialRecords : [];
-const defaultTags = isMockEnabled ? initialTags : [];
-const defaultThreads = isMockEnabled ? initialThreads : [];
-
 /**
  * 持久化数据迁移时校验 activeTab 的合法值集合。
  * 移除某个 Tab（如 v7 的 'widgets'）后，老数据里的该值会让所有渲染分支失配 → 白屏。
@@ -405,9 +211,10 @@ const VALID_TABS: ActiveTab[] = ['record', 'review', 'matrix', 'value-matrix', '
 export const useFlowStore = create<FlowState>()(
   persist(
     (set, get) => ({
-      records: defaultRecords,
-      tags: defaultTags,
-      threads: defaultThreads,
+      // 不内置任何示例数据：新安装为空白起点（示例数据会污染回顾/统计视图的统计口径）。
+      records: [],
+      tags: [],
+      threads: [],
       deskRows: [],
       homeLink: null,
 
@@ -1269,23 +1076,6 @@ export const useFlowStore = create<FlowState>()(
         }));
         const rowId = deskRowIdForDrawer(drawerId);
         if (rowId) triggerDeskRowSync(rowId);
-      },
-
-      resetToDefaultData: () => {
-        set({
-          records: defaultRecords,
-          tags: defaultTags,
-          threads: defaultThreads,
-          deskRows: [],
-          activeBranchParentId: null,
-          quickSelectedThreadId: null,
-          selectedThreadId: null,
-          selectedDate: null,
-          fromReviewDate: false,
-          fromThreadDetailId: null,
-          threadDetailReturnContext: null,
-          homeLink: null,
-        });
       },
     }),
     {

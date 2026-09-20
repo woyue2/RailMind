@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, CheckCircle, AlertCircle, RefreshCw, X, Shield, HardDrive, RotateCcw } from 'lucide-react';
+import { Settings, CheckCircle, AlertCircle, RefreshCw, X, Shield, HardDrive } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import {
   loadR2Settings,
@@ -10,7 +10,6 @@ import {
 import { testR2Connection, triggerR2Sync } from '../../sync';
 import { R2Config, SyncReport } from '../../sync/types';
 import { useSystemBack } from '../../hooks/useSystemBack';
-import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -28,8 +27,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const [syncing, setSyncing] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const resetToDefaultData = useFlowStore((s) => s.resetToDefaultData);
-  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   useSystemBack(isOpen, onClose);
 
@@ -308,45 +305,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
               )}
             </div>
           )}
-
-          {/* Danger Zone */}
-          <div className="space-y-2.5 rounded-xl border border-red-100 bg-red-50/50 p-3.5">
-            <div>
-              <div className="text-[13px] font-semibold text-red-800">
-                {import.meta.env.DEV ? '重置为开发示例数据' : '清空本机全部数据'}
-              </div>
-              <div className="mt-0.5 text-[11px] leading-5 text-red-600/90">
-                {import.meta.env.DEV
-                  ? '当前数据会被替换为开发用的示例数据集（仅开发构建可用；正式构建中此操作等同于清空）。'
-                  : '所有记录、思维线、标签与桌邊内容都会被清空，恢复到初始空白状态。'}
-                {isR2Configured()
-                  ? ' 若已启用云端同步，清空后请勿立即同步，否则本地清空会被推送到云端；如需保留云端备份，建议先关闭同步开关。'
-                  : ' 此操作不可恢复，请谨慎操作。'}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setResetConfirmOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3.5 py-2 font-medium text-white transition-colors hover:bg-red-700"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>{import.meta.env.DEV ? '重置数据' : '清空数据'}</span>
-            </button>
-          </div>
         </form>
       </div>
-
-      <ConfirmDeleteModal
-        isOpen={resetConfirmOpen}
-        onClose={() => setResetConfirmOpen(false)}
-        onConfirm={resetToDefaultData}
-        title={import.meta.env.DEV ? '确定要重置为示例数据吗？' : '确定要清空全部数据吗？'}
-        description={
-          import.meta.env.DEV
-            ? '当前数据会被替换为开发用的示例数据集。'
-            : '当前全部记录、思维线、标签与桌邊内容都会被永久删除，恢复到初始空白状态。此操作不可恢复。'
-        }
-      />
     </div>
   );
 };
