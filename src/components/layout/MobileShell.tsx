@@ -6,7 +6,6 @@ import { useFlowStore } from '../../store/useFlowStore';
 import { RecordView } from '../../views/record/RecordView';
 import { ReviewView } from '../../views/ReviewView';
 import { ThreadDetailView } from '../../views/ThreadDetailView';
-import { WidgetSimulatorView } from '../../views/WidgetSimulatorView';
 import { EisenhowerMatrixView } from '../../views/EisenhowerMatrixView';
 import { ValuePriorityMatrixView } from '../../views/ValuePriorityMatrixView';
 import { DeskEdgeView } from '../../views/DeskEdgeView';
@@ -15,6 +14,10 @@ import { StorageQuotaNotice } from '../common/StorageQuotaNotice';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
 import { triggerR2Sync } from '../../sync';
 import { SYSTEM_BACK_EVENT } from '../../hooks/useSystemBack';
+
+/** 当前有效的 Tab 集合。持久化数据里可能残留已被移除的 Tab（如旧的 'widgets'）。 */
+const KNOWN_TABS: readonly string[] = ['record', 'review', 'matrix', 'value-matrix', 'thread-detail', 'desk'];
+const isKnownTab = (tab: string): boolean => KNOWN_TABS.includes(tab);
 
 export const MobileShell = () => {
   const activeTab = useFlowStore((s) => s.activeTab);
@@ -60,7 +63,7 @@ export const MobileShell = () => {
         }
       }
 
-      if (activeTab === 'review' || activeTab === 'matrix' || activeTab === 'value-matrix' || activeTab === 'widgets' || activeTab === 'desk') {
+      if (activeTab === 'review' || activeTab === 'matrix' || activeTab === 'value-matrix' || activeTab === 'desk') {
         setActiveTab('record');
         return;
       }
@@ -117,13 +120,20 @@ export const MobileShell = () => {
       </aside>
       <main className="min-w-0 flex-1 flex justify-center md:p-5 lg:p-8">
         <div className="relative flex min-h-0 min-w-0 w-full max-w-5xl flex-col overflow-hidden bg-white md:rounded-2xl md:border md:border-slate-200 md:shadow-sm">
-          {activeTab === 'record' && <RecordView />}
-          {activeTab === 'review' && <ReviewView />}
-          {activeTab === 'matrix' && <EisenhowerMatrixView />}
-          {activeTab === 'value-matrix' && <ValuePriorityMatrixView />}
-          {activeTab === 'thread-detail' && <ThreadDetailView />}
-          {activeTab === 'widgets' && <WidgetSimulatorView />}
-          {activeTab === 'desk' && <DeskEdgeView />}
+          {/* 运行时兜底：移除某个 Tab（v7 移除 'widgets'）后，历史持久化数据里可能残留
+              已不存在的 activeTab，导致所有分支都不匹配而白屏。未知值一律回落到记录页。 */}
+          {isKnownTab(activeTab) ? (
+            <>
+              {activeTab === 'record' && <RecordView />}
+              {activeTab === 'review' && <ReviewView />}
+              {activeTab === 'matrix' && <EisenhowerMatrixView />}
+              {activeTab === 'value-matrix' && <ValuePriorityMatrixView />}
+              {activeTab === 'thread-detail' && <ThreadDetailView />}
+              {activeTab === 'desk' && <DeskEdgeView />}
+            </>
+          ) : (
+            <RecordView />
+          )}
         </div>
       </main>
     </div>

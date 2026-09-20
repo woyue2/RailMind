@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Tag, Plus, X, Check } from 'lucide-react';
+import { Tag, Plus, X, Check, Trash2 } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { QUOTE_COLOR_PALETTE as PRESET_COLORS } from '../../utils/quoteColors';
 import { useSystemBack } from '../../hooks/useSystemBack';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
 interface TagPickerModalProps {
   isOpen: boolean;
@@ -20,9 +21,11 @@ export const TagPickerModal = ({
   const [isCreating, setIsCreating] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [selectedColor, setSelectedColor] = useState(PRESET_COLORS[0]);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string; count: number } | null>(null);
 
   const tags = useFlowStore((s) => s.tags);
   const createTag = useFlowStore((s) => s.createTag);
+  const deleteTag = useFlowStore((s) => s.deleteTag);
 
   useSystemBack(isOpen, onClose);
 
@@ -78,27 +81,47 @@ export const TagPickerModal = ({
             {tags.map((tag) => {
               const isSelected = currentTagId === tag.id;
               return (
-                <button
+                <div
                   key={tag.id}
-                  onClick={() => {
-                    onSelectTag(tag.id);
-                    onClose();
-                  }}
-                  className={`px-3 py-2 rounded-lg border text-left flex items-center justify-between text-xs font-medium transition-colors ${
+                  className={`group flex items-center rounded-lg border text-xs font-medium transition-colors ${
                     isSelected
                       ? 'border-gray-800 bg-gray-50 shadow-sm'
                       : 'border-gray-200 hover:border-gray-300 bg-white'
                   }`}
                 >
-                  <div className="flex items-center gap-2 truncate">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: tag.color }}
-                    />
-                    <span className="truncate text-gray-800">[{tag.name}]</span>
-                  </div>
-                  {isSelected && <Check className="w-3.5 h-3.5 text-gray-900 flex-shrink-0" />}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelectTag(tag.id);
+                      onClose();
+                    }}
+                    className="flex min-w-0 flex-1 items-center justify-between px-3 py-2 text-left"
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: tag.color }}
+                      />
+                      <span className="truncate text-gray-800">[{tag.name}]</span>
+                    </div>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-gray-900 flex-shrink-0" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPendingDelete({
+                        id: tag.id,
+                        name: tag.name,
+                        count: useFlowStore.getState().records.filter((r) => r.tag_id === tag.id).length,
+                      })
+                    }
+                    className="mr-1.5 shrink-0 rounded-md p-1 text-gray-300 transition-opacity hover:bg-red-50 hover:text-red-600 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                    title="删除标签"
+                    aria-label={`删除标签 ${tag.name}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -158,6 +181,21 @@ export const TagPickerModal = ({
           )}
         </div>
       </div>
+
+      <ConfirmDeleteModal
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) deleteTag(pendingDelete.id);
+        }}
+        title="确定要删除这个标签吗？"
+        description={
+          pendingDelete && pendingDelete.count > 0
+            ? `该标签下有 ${pendingDelete.count} 条记录，删除后这些记录会变为「无标签」，记录本身不会被删除。`
+            : '删除后无法恢复。'
+        }
+        recordText={pendingDelete ? `[${pendingDelete.name}]` : undefined}
+      />
     </div>
   );
 };

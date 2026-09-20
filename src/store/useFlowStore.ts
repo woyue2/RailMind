@@ -147,6 +147,8 @@ interface FlowState {
 
   // Actions for Threads
   createThread: (title: string) => ThreadItem;
+  /** 删除思维线；关联记录的 thread_id 会被置空（记录本身保留）。 */
+  deleteThread: (id: string) => void;
   getRecentThreads: (limit?: number) => ThreadItem[];
   searchThreads: (query: string) => ThreadItem[];
   getThreadRecords: (threadId: string) => EnrichedRecordItem[];
@@ -393,6 +395,12 @@ const isMockEnabled = import.meta.env.DEV;
 const defaultRecords = isMockEnabled ? initialRecords : [];
 const defaultTags = isMockEnabled ? initialTags : [];
 const defaultThreads = isMockEnabled ? initialThreads : [];
+
+/**
+ * 持久化数据迁移时校验 activeTab 的合法值集合。
+ * 移除某个 Tab（如 v7 的 'widgets'）后，老数据里的该值会让所有渲染分支失配 → 白屏。
+ */
+const VALID_TABS: ActiveTab[] = ['record', 'review', 'matrix', 'value-matrix', 'thread-detail', 'desk'];
 
 export const useFlowStore = create<FlowState>()(
   persist(
@@ -711,6 +719,33 @@ export const useFlowStore = create<FlowState>()(
         triggerAutoSync((sync) => sync?.pushThread(newThread));
 
         return newThread;
+      },
+
+      deleteThread: (id) => {
+        const nowIso = new Date().toISOString();
+        // 与 deleteTag 对称：解绑关联记录而非连坐删除，避免用户误删后丢失正文。
+        let updatedRecords: RecordItem[] = [];
+        set((state) => {
+          updatedRecords = state.records
+            .filter((record) => record.thread_id === id)
+            .map((record) => ({ ...record, thread_id: null, updated_at: nowIso }));
+          const updatedIds = new Set(updatedRecords.map((record) => record.id));
+          return {
+            threads: state.threads.filter((thread) => thread.id !== id),
+            records: state.records.map((record) =>
+              updatedIds.has(record.id)
+                ? updatedRecords.find((updated) => updated.id === record.id)!
+                : record
+            ),
+            // 若当前正停留在该思维线详情页，退出到记录页避免悬空视图。
+            ...(state.selectedThreadId === id
+              ? { selectedThreadId: null, activeTab: 'record' as ActiveTab }
+              : {}),
+            ...(state.quickSelectedThreadId === id ? { quickSelectedThreadId: null } : {}),
+          };
+        });
+        updatedRecords.forEach((record) => triggerAutoSync((sync) => sync?.pushRecord(record)));
+        triggerAutoSync((sync) => sync?.deleteThread(id));
       },
 
       getRecentThreads: (limit = 3) => {
@@ -1257,7 +1292,10 @@ export const useFlowStore = create<FlowState>()(
       // v3 prevents previously persisted development fixtures from leaking
       // into a production APK after upgrading from the prototype build.
       name: 'flow-01-storage-v3',
-      version: 6,
+      // v7：K5 移除了 'widgets' Tab。老版本 localStorage 可能持久化过
+      // activeTab: 'widgets'，反序列化后所有渲染分支都不匹配 → 白屏。
+      // migrate 负责把非法 activeTab 兜底回 'record'，故必须 bump 版本号。
+      version: 7,
       // K9：单 key 承载全量数据，图片/语音以 base64 内嵌，接近 5MB 配额时
       // 原实现会静默丢数据。quotaSafeStorage 在超配额时逐级剥离附件保住元数据。
       storage: quotaSafeStorage as PersistStorage<FlowState>,
@@ -1269,6 +1307,9 @@ export const useFlowStore = create<FlowState>()(
         return {
           ...state,
           threadDetailReturnContext: null,
+          activeTab: VALID_TABS.includes(state.activeTab as ActiveTab)
+            ? (state.activeTab as ActiveTab)
+            : 'record',
           recordViewMode: state.recordViewMode ?? 'timeline',
           timelineDateHeaderBackgroundOpacity: state.timelineDateHeaderBackgroundOpacity ?? 30,
           dailyPageDateHeaderBackgroundOpacity: state.dailyPageDateHeaderBackgroundOpacity ?? 30,

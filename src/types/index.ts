@@ -108,4 +108,4 @@ export interface EnrichedRecordItem extends RecordItem {
 }
 
 // 视图切换类型
-export type ActiveTab = 'record' | 'review' | 'matrix' | 'value-matrix' | 'thread-detail' | 'widgets' | 'desk';
+export type ActiveTab = 'record' | 'review' | 'matrix' | 'value-matrix' | 'thread-detail' | 'desk';

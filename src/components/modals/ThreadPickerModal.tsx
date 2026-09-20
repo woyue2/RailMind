@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Search, Plus, X, Sparkles } from 'lucide-react';
+import { Search, Plus, X, Sparkles, Trash2 } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { useSystemBack } from '../../hooks/useSystemBack';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
 interface ThreadPickerModalProps {
   isOpen: boolean;
@@ -19,10 +20,12 @@ export const ThreadPickerModal = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string; count: number } | null>(null);
 
   const searchThreads = useFlowStore((s) => s.searchThreads);
   const getRecentThreads = useFlowStore((s) => s.getRecentThreads);
   const createThread = useFlowStore((s) => s.createThread);
+  const deleteThread = useFlowStore((s) => s.deleteThread);
 
   useSystemBack(isOpen, onClose);
 
@@ -103,21 +106,40 @@ export const ThreadPickerModal = ({
             filteredThreads.map((thread) => {
               const isRecent = recentThreadIds.has(thread.id);
               return (
-                <button
+                <div
                   key={thread.id}
-                  onClick={() => handleSelect(thread.id)}
-                  className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 rounded-lg transition-colors group"
+                  className="group flex items-center rounded-lg transition-colors hover:bg-gray-50"
                 >
-                  <span className="text-sm font-medium text-gray-800 group-hover:text-gray-900">
-                    {thread.title}
-                  </span>
-                  {isRecent && (
-                    <span className="inline-flex items-center text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                      <Sparkles className="w-2.5 h-2.5 mr-1 text-amber-500" />
-                      最近
+                  <button
+                    onClick={() => handleSelect(thread.id)}
+                    className="flex min-w-0 flex-1 items-center justify-between px-4 py-3 text-left"
+                  >
+                    <span className="text-sm font-medium text-gray-800 group-hover:text-gray-900">
+                      {thread.title}
                     </span>
-                  )}
-                </button>
+                    {isRecent && (
+                      <span className="inline-flex items-center text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                        <Sparkles className="w-2.5 h-2.5 mr-1 text-amber-500" />
+                        最近
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPendingDelete({
+                        id: thread.id,
+                        title: thread.title,
+                        count: useFlowStore.getState().records.filter((r) => r.thread_id === thread.id).length,
+                      })
+                    }
+                    className="mr-2 shrink-0 rounded-md p-1.5 text-gray-300 transition-opacity hover:bg-red-50 hover:text-red-600 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                    title="删除思维线"
+                    aria-label={`删除思维线 ${thread.title}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               );
             })
           )}
@@ -163,6 +185,21 @@ export const ThreadPickerModal = ({
           )}
         </div>
       </div>
+
+      <ConfirmDeleteModal
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) deleteThread(pendingDelete.id);
+        }}
+        title="确定要删除这条思维线吗？"
+        description={
+          pendingDelete && pendingDelete.count > 0
+            ? `该思维线下有 ${pendingDelete.count} 条记录，删除后这些记录会保留，但会解除关联。`
+            : '删除后无法恢复。'
+        }
+        recordText={pendingDelete?.title}
+      />
     </div>
   );
 };
