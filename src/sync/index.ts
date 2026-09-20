@@ -9,7 +9,7 @@ import {
   SyncProgressStatus,
   R2Config,
 } from './types';
-import { isR2Configured, loadR2Settings, loadTombstones, saveTombstoneRecord } from './credentials';
+import { isR2Configured, loadR2Settings, loadTombstones, saveTombstoneRecord, removeTombstoneRecords } from './credentials';
 import { RecordItem, TagItem, ThreadItem, HomeLink, DeskEdgeRow } from '../types';
 
 let inMemoryTombstones: SyncTombstone[] = loadTombstones();
@@ -107,6 +107,14 @@ export const flowRepository: FlowRepositoryLike = {
     );
     inMemoryTombstones.push(tombstone);
     saveTombstoneRecord(tombstone);
+  },
+  removeTombstones: (entityType: SyncTombstone['entityType'], entityIds: string[]) => {
+    if (!entityIds.length) return;
+    const removing = new Set(entityIds);
+    inMemoryTombstones = inMemoryTombstones.filter(
+      (t) => !(t.entityType === entityType && removing.has(t.entityId))
+    );
+    removeTombstoneRecords(entityType, entityIds);
   },
 };
 

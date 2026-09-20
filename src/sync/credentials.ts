@@ -86,3 +86,20 @@ export function saveTombstoneRecord(tombstone: SyncTombstone): void {
   list.push(tombstone);
   localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(list));
 }
+
+/**
+ * 清除指定实体的本地墓碑记录。
+ * 用于「删除后撤销恢复」场景：恢复实体时必须同步移除墓碑，
+ * 否则后续 push/sync 会因 isDeleted 短路而永久跳过该实体。
+ */
+export function removeTombstoneRecords(
+  entityType: SyncTombstone['entityType'],
+  entityIds: string[]
+): void {
+  if (!entityIds.length) return;
+  const removing = new Set(entityIds);
+  const remaining = loadTombstones().filter(
+    (t) => !(t.entityType === entityType && removing.has(t.entityId))
+  );
+  localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(remaining));
+}

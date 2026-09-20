@@ -16,7 +16,7 @@ import {
 import { generateId, getLocalDateKey } from '../utils/dateUtils';
 import { pickRandomQuoteColor } from '../utils/quoteColors';
 import { createR2SyncService, reportR2SyncFailure } from '../sync';
-import { loadR2Settings } from '../sync/credentials';
+import { loadR2Settings, removeTombstoneRecords } from '../sync/credentials';
 
 function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) => Promise<void> | void) {
   if (!loadR2Settings().enabled) return;
@@ -507,6 +507,13 @@ export const useFlowStore = create<FlowState>()(
         set((state) => ({
           records: [...state.records, ...restoredRecords],
         }));
+        // 先清除墓碑再推送，否则 pushRecord / syncEntities 会因 isDeleted 短路，
+        // 导致恢复的记录在其他设备上永久隐藏。
+        // 本地墓碑清除不依赖 R2 可用性（即使 enabled=true 但服务构造失败也要清），
+        // 否则残缺配置下恢复的记录在补全配置后仍会被墓碑藏掉。
+        const restoredIds = restoredRecords.map((record) => record.id);
+        removeTombstoneRecords('record', restoredIds);
+        triggerAutoSync((sync) => sync?.clearTombstones('record', restoredIds));
         restoredRecords.forEach((record) => triggerAutoSync((sync) => sync?.pushRecord(record)));
       },
 

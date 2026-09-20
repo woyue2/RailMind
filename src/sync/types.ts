@@ -81,4 +81,5 @@ export interface FlowRepositoryLike {
 
   getTombstones(): SyncTombstone[];
   saveTombstone(tombstone: SyncTombstone): void;
+  removeTombstones(entityType: SyncTombstone['entityType'], entityIds: string[]): void;
 }

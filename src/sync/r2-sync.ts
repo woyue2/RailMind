@@ -7,7 +7,7 @@ import {
   SyncOptions,
   SyncProgressStatus,
 } from './types';
-import { saveTombstoneRecord } from './credentials';
+import { saveTombstoneRecord, removeTombstoneRecords } from './credentials';
 import { revisionOf } from './entity-state';
 
 const SYNC_CONCURRENCY = 4;
@@ -165,6 +165,27 @@ export class R2SyncService {
 
   deleteDeskRow(id: string): Promise<void> {
     return enqueue(() => this.deleteEntity('desk', id));
+  }
+
+  /**
+   * 清除指定实体的墓碑（本地内存 + localStorage + R2 对象）。
+   * 撤销删除（restore）后必须调用，否则 isDeleted 短路会让该实体永久无法同步。
+   */
+  clearTombstones(entityType: SyncTombstone['entityType'], entityIds: string[]): Promise<void> {
+    if (!entityIds.length) return Promise.resolve();
+    this.repository.removeTombstones(entityType, entityIds);
+    removeTombstoneRecords(entityType, entityIds);
+    return enqueue(async () => {
+      await mapConcurrent(
+        entityIds,
+        SYNC_CONCURRENCY,
+        async (id) => {
+          await this.client
+            .delete(`tombstones/${entityType}/${id}.json`)
+            .catch(() => undefined);
+        }
+      );
+    });
   }
 
   sync(options?: SyncOptions): Promise<SyncReport> {
