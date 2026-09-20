@@ -43,14 +43,16 @@ export interface SyncProgressStatus {
 export interface SyncOptions {
   manual?: boolean;
   onProgress?: (status: SyncProgressStatus) => void;
+  timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface R2ClientLike {
-  putJson(key: string, data: unknown): Promise<void>;
-  getJson<T>(key: string): Promise<T | undefined>;
-  list(prefix: string): Promise<Array<{ key: string; lastModified: Date }>>;
-  delete(key: string): Promise<void>;
-  testConnection(): Promise<{ ok: boolean; message: string }>;
+  putJson(key: string, data: unknown, signal?: AbortSignal): Promise<void>;
+  getJson<T>(key: string, signal?: AbortSignal): Promise<T | undefined>;
+  list(prefix: string, signal?: AbortSignal): Promise<Array<{ key: string; lastModified: Date }>>;
+  delete(key: string, signal?: AbortSignal): Promise<void>;
+  testConnection(signal?: AbortSignal): Promise<{ ok: boolean; message: string }>;
 }
 
 export interface FlowRepositoryLike {

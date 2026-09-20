@@ -54,6 +54,8 @@ export interface TagItem {
   id: string;
   name: string;
   color: string; // hex color (例如 '#F87171')
+  created_at?: string;
+  updated_at?: string; // 同步比较用的修订时间，与旧数据保持兼容
 }
 
 // Thread 思维线数据模型

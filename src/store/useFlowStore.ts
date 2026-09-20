@@ -15,7 +15,7 @@ import {
 } from '../types';
 import { generateId, getLocalDateKey } from '../utils/dateUtils';
 import { pickRandomQuoteColor } from '../utils/quoteColors';
-import { createR2SyncService } from '../sync';
+import { createR2SyncService, reportR2SyncFailure } from '../sync';
 import { loadR2Settings } from '../sync/credentials';
 
 function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) => Promise<void> | void) {
@@ -25,10 +25,10 @@ function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) 
   try {
     const res = action(sync);
     if (res instanceof Promise) {
-      res.catch(() => {});
+      res.catch(reportR2SyncFailure);
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    reportR2SyncFailure(error);
   }
 }
 
@@ -37,12 +37,12 @@ function triggerDeskRowSync(rowId: string, deleted = false) {
   const sync = createR2SyncService();
   if (!sync) return;
   if (deleted) {
-    sync.deleteDeskRow(rowId).catch(() => {});
+    sync.deleteDeskRow(rowId).catch(reportR2SyncFailure);
     return;
   }
   const row = useFlowStore.getState().deskRows.find((item) => item.id === rowId);
   if (row) {
-    sync.pushDeskRow(row).catch(() => {});
+    sync.pushDeskRow(row).catch(reportR2SyncFailure);
   }
 }
 
@@ -632,10 +632,13 @@ export const useFlowStore = create<FlowState>()(
       },
 
       createTag: (name, color = '#60A5FA') => {
+        const nowIso = new Date().toISOString();
         const newTag: TagItem = {
           id: generateId(),
           name: name.trim(),
           color,
+          created_at: nowIso,
+          updated_at: nowIso,
         };
         set((state) => ({
           tags: [...state.tags, newTag],

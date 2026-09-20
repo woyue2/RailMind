@@ -8,8 +8,10 @@ import {
   SyncProgressStatus,
 } from './types';
 import { saveTombstoneRecord } from './credentials';
+import { revisionOf } from './entity-state';
 
 const SYNC_CONCURRENCY = 4;
+const DEFAULT_SYNC_TIMEOUT_MS = 60_000;
 let operationQueue: Promise<unknown> = Promise.resolve();
 
 function entityPrefix(entityType: SyncTombstone['entityType']): string {
@@ -31,6 +33,25 @@ function enqueue<T>(operation: () => Promise<T>): Promise<T> {
   const result = operationQueue.then(operation, operation);
   operationQueue = result.catch(() => undefined);
   return result;
+}
+
+function runWithTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`同步超时（${timeoutMs / 1000}s）`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation(controller.signal), timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+    controller.abort();
+  });
 }
 
 export async function mapConcurrent<T, R = void>(
@@ -76,7 +97,10 @@ export class R2SyncService {
     return enqueue(async () => {
       const current = this.repository.getRecord(id);
       if (current && !this.isDeleted('record', id)) {
-        await this.client.putJson(`records/${id}.json`, current);
+        const remote = await this.client.getJson<RecordItem>(`records/${id}.json`);
+        if (!remote || revisionOf(remote) < revisionOf(current)) {
+          await this.client.putJson(`records/${id}.json`, current);
+        }
       }
     });
   }
@@ -86,7 +110,10 @@ export class R2SyncService {
     return enqueue(async () => {
       const current = this.repository.getThread(id);
       if (current && !this.isDeleted('thread', id)) {
-        await this.client.putJson(`threads/${id}.json`, current);
+        const remote = await this.client.getJson<ThreadItem>(`threads/${id}.json`);
+        if (!remote || revisionOf(remote) < revisionOf(current)) {
+          await this.client.putJson(`threads/${id}.json`, current);
+        }
       }
     });
   }
@@ -96,7 +123,10 @@ export class R2SyncService {
     return enqueue(async () => {
       const current = this.repository.getTag(id);
       if (current && !this.isDeleted('tag', id)) {
-        await this.client.putJson(`tags/${id}.json`, current);
+        const remote = await this.client.getJson<TagItem>(`tags/${id}.json`);
+        if (!remote || revisionOf(remote) < revisionOf(current)) {
+          await this.client.putJson(`tags/${id}.json`, current);
+        }
       }
     });
   }
@@ -125,7 +155,10 @@ export class R2SyncService {
     return enqueue(async () => {
       const current = this.repository.getDeskRow(row.id);
       if (current && !this.isDeleted('desk', row.id)) {
-        await this.client.putJson(`desks/${row.id}.json`, current);
+        const remote = await this.client.getJson<DeskEdgeRow>(`desks/${row.id}.json`);
+        if (!remote || revisionOf(remote) < revisionOf(current)) {
+          await this.client.putJson(`desks/${row.id}.json`, current);
+        }
       }
     });
   }
@@ -135,7 +168,10 @@ export class R2SyncService {
   }
 
   sync(options?: SyncOptions): Promise<SyncReport> {
-    return enqueue(() => this.runSync(options));
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_SYNC_TIMEOUT_MS;
+    return enqueue(() =>
+      runWithTimeout((signal) => this.runSync({ ...options, signal }), timeoutMs)
+    );
   }
 
   private isDeleted(entityType: SyncTombstone['entityType'], entityId: string): boolean {
@@ -172,6 +208,7 @@ export class R2SyncService {
   }
 
   private async runSync(options?: SyncOptions): Promise<SyncReport> {
+    const signal = options?.signal;
     const report: SyncReport = { pulled: 0, pushed: 0, errors: [] };
     const reportProgress = (status: SyncProgressStatus) => {
       try {
@@ -196,7 +233,7 @@ export class R2SyncService {
           current: completed,
           total,
         });
-      });
+      }, signal);
 
       // 2. 同步 Records
       await this.syncEntities<RecordItem>(
@@ -207,7 +244,8 @@ export class R2SyncService {
         (item) => this.repository.saveRecord(item),
         (item) => item.updated_at ?? item.created_at,
         report,
-        reportProgress
+        reportProgress,
+        signal
       );
 
       // 3. 同步 Threads
@@ -219,7 +257,8 @@ export class R2SyncService {
         (item) => this.repository.saveThread(item),
         (item) => item.last_used_at || item.created_at,
         report,
-        reportProgress
+        reportProgress,
+        signal
       );
 
       // 4. 同步 Tags
@@ -229,9 +268,10 @@ export class R2SyncService {
         () => this.repository.getTags(),
         (id) => this.repository.getTag(id),
         (item) => this.repository.saveTag(item),
-        () => '1970-01-01T00:00:00.000Z',
+        (item) => item.updated_at ?? item.created_at ?? '1970-01-01T00:00:00.000Z',
         report,
-        reportProgress
+        reportProgress,
+        signal
       );
 
       // 4.5 同步桌邊抽屜
@@ -248,7 +288,8 @@ export class R2SyncService {
             ? item.state_updated_at
             : item.updated_at || item.created_at,
         report,
-        reportProgress
+        reportProgress,
+        signal
       );
 
       // 5. 同步设置
@@ -258,11 +299,11 @@ export class R2SyncService {
         current: 0,
         total: 1,
       });
-      const remoteLinkItem = (await this.client.list('settings/')).find(
+      const remoteLinkItem = (await this.client.list('settings/', signal)).find(
         (item) => item.key === 'settings/home-link.json'
       );
       const remoteLink = remoteLinkItem
-        ? await this.client.getJson<HomeLink>(remoteLinkItem.key)
+        ? await this.client.getJson<HomeLink>(remoteLinkItem.key, signal)
         : undefined;
       const localLink = this.repository.getHomeLink();
       if (
@@ -277,7 +318,7 @@ export class R2SyncService {
         (!remoteLinkItem ||
           new Date(localLink.updatedAt).getTime() > remoteLinkItem.lastModified.getTime())
       ) {
-        await this.client.putJson('settings/home-link.json', localLink);
+        await this.client.putJson('settings/home-link.json', localLink, signal);
         report.pushed++;
       }
 
@@ -297,15 +338,19 @@ export class R2SyncService {
         total: 0,
       });
     }
+    if (signal?.aborted) {
+      throw new Error('同步已取消');
+    }
     return report;
   }
 
   private async syncTombstones(
     report: SyncReport,
-    onProgress?: (completed: number, total: number) => void
+    onProgress?: (completed: number, total: number) => void,
+    signal?: AbortSignal
   ): Promise<void> {
     const localTombstones = this.repository.getTombstones();
-    const remoteList = await this.client.list('tombstones/');
+    const remoteList = await this.client.list('tombstones/', signal);
     const validRemoteItems = remoteList.filter((item) =>
       /^tombstones\/(record|thread|tag|desk)\/[^/]+\.json$/.test(item.key)
     );
@@ -328,19 +373,24 @@ export class R2SyncService {
         await this.client
           .putJson(
             `tombstones/${tombstone.entityType}/${tombstone.entityId}.json`,
-            tombstone
+            tombstone,
+            signal
           )
           .catch(() => undefined);
       },
       tick
     );
 
+    if (signal?.aborted) {
+      throw new Error('同步已取消');
+    }
+
     // 2. 并发拉取远端墓碑并执行本地清理（受控并发池）
     await mapConcurrent(
       validRemoteItems,
       SYNC_CONCURRENCY,
       async (item) => {
-        const tombstone = await this.client.getJson<SyncTombstone>(item.key);
+        const tombstone = await this.client.getJson<SyncTombstone>(item.key, signal);
         if (!tombstone) return;
 
         this.repository.saveTombstone(tombstone);
@@ -360,7 +410,9 @@ export class R2SyncService {
         if (removed) report.pulled++;
 
         const prefix = entityPrefix(tombstone.entityType);
-        await this.client.delete(`${prefix}/${tombstone.entityId}.json`).catch(() => undefined);
+        await this.client
+          .delete(`${prefix}/${tombstone.entityId}.json`, signal)
+          .catch(() => undefined);
       },
       tick
     );
@@ -374,7 +426,8 @@ export class R2SyncService {
     saveLocal: (item: T) => void,
     getTimeStamp: (item: T) => string,
     report: SyncReport,
-    reportProgress: (status: SyncProgressStatus) => void
+    reportProgress: (status: SyncProgressStatus) => void,
+    signal?: AbortSignal
   ): Promise<void> {
     const entityLabel =
       entityType === 'record'
@@ -400,7 +453,7 @@ export class R2SyncService {
     });
 
     const [remoteList, locals] = await Promise.all([
-      this.client.list(prefix),
+      this.client.list(prefix, signal),
       Promise.resolve(listLocal()),
     ]);
     const localMap = new Map(locals.map((item) => [item.id, item]));
@@ -409,6 +462,7 @@ export class R2SyncService {
         .filter((item) => item.key.endsWith('.json'))
         .map((item) => [item.key.slice(prefix.length, -5), item])
     );
+    const remoteObjectCache = new Map<string, T>();
 
     const remoteEntries = [...remoteMap];
     const localEntries = [...localMap];
@@ -438,16 +492,23 @@ export class R2SyncService {
       async ([id, remoteItem]) => {
         if (this.isDeleted(entityType, id)) return;
         try {
-          const remote = await this.client.getJson<T>(remoteItem.key);
+          const remote = await this.client.getJson<T>(remoteItem.key, signal);
           if (!remote) return;
+          remoteObjectCache.set(id, remote);
           const local = findLocal(id);
           if (!this.isDeleted(entityType, id)) {
             if (!local) {
               saveLocal(remote);
               report.pulled++;
             } else {
-              const localTime = new Date(getTimeStamp(local)).getTime();
-              const remoteTime = remoteItem.lastModified.getTime();
+              const localRevision = revisionOf(local);
+              const remoteRevision = revisionOf(remote);
+              const localTime = Number.isNaN(localRevision)
+                ? new Date(getTimeStamp(local)).getTime()
+                : localRevision;
+              const remoteTime = Number.isNaN(remoteRevision)
+                ? remoteItem.lastModified.getTime()
+                : remoteRevision;
               if (remoteTime > localTime) {
                 saveLocal(remote);
                 report.pulled++;
@@ -468,6 +529,10 @@ export class R2SyncService {
       }
     );
 
+    if (signal?.aborted) {
+      throw new Error('同步已取消');
+    }
+
     // 推送本地新增或更新的对象（受控并发池）
     await mapConcurrent(
       localEntries,
@@ -475,12 +540,44 @@ export class R2SyncService {
       async ([id]) => {
         const local = findLocal(id);
         if (!local || this.isDeleted(entityType, id)) return;
-        const remote = remoteMap.get(id);
-        const localTime = new Date(getTimeStamp(local)).getTime();
+        const remoteItem = remoteMap.get(id);
+        let remoteRevision: number | undefined;
+        if (remoteItem) {
+          const cachedRemote = remoteObjectCache.get(id);
+          if (cachedRemote) {
+            remoteRevision = revisionOf(cachedRemote);
+          } else {
+            try {
+              const remoteObject = await this.client.getJson<T>(remoteItem.key, signal);
+              if (remoteObject) {
+                remoteRevision = revisionOf(remoteObject);
+              }
+            } catch (error) {
+              report.errors.push(
+                `推送 ${entityType} ${id} 失败：${
+                  error instanceof Error ? error.message : String(error)
+                }`
+              );
+              return;
+            }
+          }
+        }
 
-        if (!remote || localTime > remote.lastModified.getTime()) {
+        const localRevision = revisionOf(local);
+        const localTime = Number.isNaN(localRevision)
+          ? new Date(getTimeStamp(local)).getTime()
+          : localRevision;
+        const remoteLastModified = remoteItem?.lastModified.getTime() ?? 0;
+        const remoteTime =
+          remoteRevision === undefined
+            ? 0
+            : Number.isNaN(remoteRevision)
+            ? remoteLastModified
+            : remoteRevision;
+
+        if (!remoteItem || localTime > remoteTime) {
           try {
-            await this.client.putJson(`${prefix}${id}.json`, local);
+            await this.client.putJson(`${prefix}${id}.json`, local, signal);
             report.pushed++;
           } catch (error) {
             report.errors.push(

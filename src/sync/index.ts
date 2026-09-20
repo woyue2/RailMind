@@ -7,11 +7,14 @@ import {
   SyncReport,
   SyncOptions,
   SyncProgressStatus,
+  R2Config,
 } from './types';
 import { isR2Configured, loadR2Settings, loadTombstones, saveTombstoneRecord } from './credentials';
 import { RecordItem, TagItem, ThreadItem, HomeLink, DeskEdgeRow } from '../types';
 
 let inMemoryTombstones: SyncTombstone[] = loadTombstones();
+let cachedSyncService: R2SyncService | null = null;
+let cachedSyncConfigKey = '';
 
 export const flowRepository: FlowRepositoryLike = {
   getRecords: () => useFlowStore.getState().records,
@@ -107,13 +110,36 @@ export const flowRepository: FlowRepositoryLike = {
   },
 };
 
+function r2SyncConfigKey(config: R2Config): string {
+  return JSON.stringify([
+    config.accountId,
+    config.accessKeyId,
+    config.secretAccessKey,
+    config.bucketName,
+    config.endpoint,
+    config.region,
+  ]);
+}
+
 export function createR2SyncService(): R2SyncService | null {
-  if (!isR2Configured()) return null;
+  if (!isR2Configured()) {
+    cachedSyncService = null;
+    cachedSyncConfigKey = '';
+    return null;
+  }
   const config = loadR2Settings();
+  const configKey = r2SyncConfigKey(config);
+  if (cachedSyncService && cachedSyncConfigKey === configKey) {
+    return cachedSyncService;
+  }
   try {
     const client = new R2Client(config);
-    return new R2SyncService(client, flowRepository);
+    cachedSyncService = new R2SyncService(client, flowRepository);
+    cachedSyncConfigKey = configKey;
+    return cachedSyncService;
   } catch {
+    cachedSyncService = null;
+    cachedSyncConfigKey = '';
     return null;
   }
 }
@@ -152,6 +178,28 @@ function notifySyncProgress(status: SyncProgressStatus | null, showOverlay: bool
   }
 }
 
+let externalErrorTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function reportR2SyncFailure(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  notifySyncProgress(
+    {
+      stage: 'error',
+      message: `同步失败：${message}`,
+      current: 0,
+      total: 0,
+    },
+    true
+  );
+  if (externalErrorTimer) {
+    clearTimeout(externalErrorTimer);
+  }
+  externalErrorTimer = setTimeout(() => {
+    notifySyncProgress(null, false);
+    externalErrorTimer = null;
+  }, 5000);
+}
+
 export async function triggerR2Sync(options: SyncOptions = {}): Promise<SyncReport | null> {
   const syncService = createR2SyncService();
   if (!syncService) return null;
@@ -173,6 +221,7 @@ export async function triggerR2Sync(options: SyncOptions = {}): Promise<SyncRepo
   try {
     const report = await syncService.sync({
       ...options,
+      timeoutMs: 60_000,
       onProgress: (status) => {
         options.onProgress?.(status);
         if (showOverlay) {
@@ -180,7 +229,13 @@ export async function triggerR2Sync(options: SyncOptions = {}): Promise<SyncRepo
         }
       },
     });
+    if (report.errors.length && options.manual) {
+      reportR2SyncFailure(new Error(report.errors[0]));
+    }
     return report;
+  } catch (error) {
+    reportR2SyncFailure(error);
+    throw error;
   } finally {
     if (showOverlay) {
       setTimeout(() => {

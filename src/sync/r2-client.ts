@@ -139,16 +139,13 @@ function parseListResponse(xml: string): {
   nextContinuationToken?: string;
 } {
   const contents: ListContents[] = [];
-  const contentsRegex = /<Contents>([\s\S]*?)<\/Contents>/g;
-  let match: RegExpExecArray | null;
-  while ((match = contentsRegex.exec(xml)) !== null) {
-    const block = match[1];
-    if (!block) continue;
-    const key = block.match(/<Key>([\s\S]*?)<\/Key>/)?.[1];
-    const lastModified = block.match(/<LastModified>([^<]*)<\/LastModified>/)?.[1];
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  for (const node of Array.from(doc.getElementsByTagName('Contents'))) {
+    const key = node.getElementsByTagName('Key')[0]?.textContent?.trim();
+    const lastModified = node.getElementsByTagName('LastModified')[0]?.textContent?.trim();
     if (key && lastModified) contents.push({ key, lastModified });
   }
-  const nextToken = xml.match(/<NextContinuationToken>([^<]*)<\/NextContinuationToken>/)?.[1];
+  const nextToken = doc.getElementsByTagName('NextContinuationToken')[0]?.textContent?.trim();
   return nextToken ? { contents, nextContinuationToken: nextToken } : { contents };
 }
 
@@ -183,7 +180,8 @@ export class R2Client implements R2ClientLike {
     url: URL,
     method: string,
     extraHeaders: Record<string, string>,
-    body: string
+    body: string,
+    signal?: AbortSignal
   ): Promise<Response> {
     const headers = await signRequest({
       method,
@@ -196,6 +194,14 @@ export class R2Client implements R2ClientLike {
     });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), DIRECT_REQUEST_TIMEOUT_MS);
+    const onExternalAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) {
+        controller.abort();
+      } else {
+        signal.addEventListener('abort', onExternalAbort, { once: true });
+      }
+    }
     try {
       return await fetch(url.toString(), {
         method,
@@ -204,6 +210,9 @@ export class R2Client implements R2ClientLike {
         signal: controller.signal,
       });
     } catch (error) {
+      if (signal?.aborted) {
+        throw new Error('同步已取消');
+      }
       if (controller.signal.aborted) {
         throw new Error(`R2 请求超时（${DIRECT_REQUEST_TIMEOUT_MS / 1000}s）`);
       }
@@ -211,22 +220,29 @@ export class R2Client implements R2ClientLike {
       throw new Error(`Failed to fetch ${url.toString()} — ${reason}`);
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onExternalAbort);
     }
   }
 
-  async putJson(key: string, data: unknown): Promise<void> {
+  async putJson(key: string, data: unknown, signal?: AbortSignal): Promise<void> {
     const body = JSON.stringify(data, null, 2);
     const url = this.buildUrl(key);
-    const res = await this.signedFetch(url, 'PUT', { 'Content-Type': 'application/json' }, body);
+    const res = await this.signedFetch(
+      url,
+      'PUT',
+      { 'Content-Type': 'application/json' },
+      body,
+      signal
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`PUT ${key} 失败（${res.status}）：${text}`);
     }
   }
 
-  async getJson<T>(key: string): Promise<T | undefined> {
+  async getJson<T>(key: string, signal?: AbortSignal): Promise<T | undefined> {
     const url = this.buildUrl(key);
-    const res = await this.signedFetch(url, 'GET', {}, '');
+    const res = await this.signedFetch(url, 'GET', {}, '', signal);
     if (res.status === 404) return undefined;
     if (!res.ok) {
       const text = await res.text().catch(() => '');
@@ -235,14 +251,14 @@ export class R2Client implements R2ClientLike {
     return (await res.json()) as T;
   }
 
-  async list(prefix: string): Promise<Array<{ key: string; lastModified: Date }>> {
+  async list(prefix: string, signal?: AbortSignal): Promise<Array<{ key: string; lastModified: Date }>> {
     const result: Array<{ key: string; lastModified: Date }> = [];
     let continuationToken: string | undefined;
     do {
       const params: Record<string, string> = { 'list-type': '2', prefix };
       if (continuationToken) params['continuation-token'] = continuationToken;
       const url = this.buildUrl('', params);
-      const res = await this.signedFetch(url, 'GET', {}, '');
+      const res = await this.signedFetch(url, 'GET', {}, '', signal);
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         throw new Error(`LIST ${prefix} 失败（${res.status}）：${text}`);
@@ -257,23 +273,23 @@ export class R2Client implements R2ClientLike {
     return result;
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(key: string, signal?: AbortSignal): Promise<void> {
     const url = this.buildUrl(key);
-    const res = await this.signedFetch(url, 'DELETE', {}, '');
+    const res = await this.signedFetch(url, 'DELETE', {}, '', signal);
     if (!res.ok && res.status !== 404) {
       const text = await res.text().catch(() => '');
       throw new Error(`DELETE ${key} 失败（${res.status}）：${text}`);
     }
   }
 
-  async testConnection(): Promise<{ ok: boolean; message: string }> {
+  async testConnection(signal?: AbortSignal): Promise<{ ok: boolean; message: string }> {
     try {
       const url = this.buildUrl('', {
         'list-type': '2',
         'max-keys': '1',
         prefix: '_sync/',
       });
-      const res = await this.signedFetch(url, 'GET', {}, '');
+      const res = await this.signedFetch(url, 'GET', {}, '', signal);
       if (res.ok) return { ok: true, message: '连接成功 ✅' };
       const text = await res.text().catch(() => '');
       if (res.status === 403)
