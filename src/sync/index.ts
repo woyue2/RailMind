@@ -181,6 +181,9 @@ function notifySyncProgress(status: SyncProgressStatus | null, showOverlay: bool
 let externalErrorTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function reportR2SyncFailure(error: unknown): void {
+  if (externalErrorTimer) {
+    return;
+  }
   const message = error instanceof Error ? error.message : String(error);
   notifySyncProgress(
     {
@@ -191,9 +194,6 @@ export function reportR2SyncFailure(error: unknown): void {
     },
     true
   );
-  if (externalErrorTimer) {
-    clearTimeout(externalErrorTimer);
-  }
   externalErrorTimer = setTimeout(() => {
     notifySyncProgress(null, false);
     externalErrorTimer = null;
