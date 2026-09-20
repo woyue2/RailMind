@@ -4,6 +4,7 @@ import { useFlowStore } from '../../store/useFlowStore';
 import { RecordItem } from '../../types';
 import { getLocalDateKey } from '../../utils/dateUtils';
 import { revealElement } from '../../utils/scrollUtils';
+import { loadBubblePos, saveBubblePos } from '../../utils/bubblePosition';
 
 export const FloatingBubblePin: React.FC = () => {
   const records = useFlowStore((s) => s.records);
@@ -28,6 +29,8 @@ export const FloatingBubblePin: React.FC = () => {
   // Drag state
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  // K8：跟踪最新位置供 pointerup 落盘，避免依赖 state 的批处理时序。
+  const latestPosRef = useRef<{ x: number; y: number } | null>(null);
   const isDraggingRef = useRef(false);
   const hasMovedRef = useRef(false);
   const dragStartRef = useRef<{ startX: number; startY: number; initX: number; initY: number }>({
@@ -68,11 +71,30 @@ export const FloatingBubblePin: React.FC = () => {
 
   useLayoutEffect(() => {
     if (!pinnedRecords.length) return;
-    setPos((previous) => clampPosition(previous ?? { x: 12, y: 12 }));
+    setPos((previous) => {
+      if (previous) return clampPosition(previous);
+      // K8：恢复上次拖动到的位置；若当时视口尺寸不同（换设备/横竖屏切换），
+      // 按比例换算后再 clamp，避免位置跑到屏幕外。
+      const saved = loadBubblePos();
+      const next = saved
+        ? clampPosition({
+            x: saved.x * (saved.vw > 0 ? window.innerWidth / saved.vw : 1),
+            y: saved.y * (saved.vh > 0 ? window.innerHeight / saved.vh : 1),
+          })
+        : clampPosition({ x: 12, y: 12 });
+      latestPosRef.current = next;
+      return next;
+    });
   }, [clampPosition, pinnedRecords.length]);
 
   useEffect(() => {
-    const reclamp = () => setPos((previous) => (previous ? clampPosition(previous) : previous));
+    const reclamp = () =>
+      setPos((previous) => {
+        if (!previous) return previous;
+        const next = clampPosition(previous);
+        latestPosRef.current = next;
+        return next;
+      });
     const resizeObserver = new ResizeObserver(reclamp);
     document
       .querySelectorAll<HTMLElement>('.record-header, .record-mode-bar, .record-quick-jumps, .record-input-bar')
@@ -157,12 +179,12 @@ export const FloatingBubblePin: React.FC = () => {
       hasMovedRef.current = true;
     }
 
-    setPos(
-      clampPosition({
-        x: dragStartRef.current.initX + dx,
-        y: dragStartRef.current.initY + dy,
-      })
-    );
+    const next = clampPosition({
+      x: dragStartRef.current.initX + dx,
+      y: dragStartRef.current.initY + dy,
+    });
+    latestPosRef.current = next;
+    setPos(next);
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -173,7 +195,12 @@ export const FloatingBubblePin: React.FC = () => {
     // If user merely tapped without dragging, trigger jump to original note
     if (!hasMovedRef.current) {
       handleJumpToOriginal(currentPin);
+      return;
     }
+
+    // K8：拖动结束后落盘位置。读 ref 而非 state，避免 pointerup
+    // 与最后一次 pointermove 之间的 React 批处理时序问题。
+    if (latestPosRef.current) saveBubblePos(latestPosRef.current);
   };
 
   return (

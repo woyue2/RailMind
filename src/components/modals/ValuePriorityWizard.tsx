@@ -32,7 +32,7 @@ function Choice({ label, detail, onClick }: { label: string; detail: string; onC
 }
 
 export function ValuePriorityWizard({ isOpen, record, onClose }: Props) {
-  const addRecord = useFlowStore((s) => s.addRecord);
+  const addRecords = useFlowStore((s) => s.addRecords);
   const updateRecord = useFlowStore((s) => s.updateRecord);
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Answers>(emptyAnswers);
@@ -90,11 +90,18 @@ export function ValuePriorityWizard({ isOpen, record, onClose }: Props) {
       setStep(0);
     } else {
       const completedProfiles = [...subtaskProfiles, profile];
-      subtasks.forEach((text, index) => addRecord(text, {
-        parent_id: record.id,
-        thread_id: record.thread_id,
-        value_priority: completedProfiles[index],
-      }));
+      // K10：一次性批量创建子任务分支，替代 N 次 addRecord（原实现会为每个子任务
+      // 触发独立的 set + sync enqueue）。
+      addRecords(
+        subtasks.map((text, index) => ({
+          text,
+          options: {
+            parent_id: record.id,
+            thread_id: record.thread_id,
+            value_priority: completedProfiles[index],
+          },
+        }))
+      );
       updateRecord(record.id, {
         value_priority: { is_routine: Boolean(answers.isRoutine), is_container: true, reason: `已拆成 ${subtasks.length} 個可執行分支` },
       });

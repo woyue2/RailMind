@@ -53,6 +53,34 @@ function deskRowIdForDrawer(drawerId: string): string {
   )?.id ?? '';
 }
 
+/**
+ * 为「被引用/被分支」的源记录分配引用色（同源同色）：
+ * - 引用（quote_id）：恒分配（首次随机，之后复用）
+ * - 分支（parent_id）：仅跨天时分配（同天保持琥珀树形，不额外上色）
+ *
+ * addRecord 与 addRecords 共用，避免批量路径漏掉上色导致行为回归。
+ * 传入 seen 集合以支持批量场景：同一次批量中同一 target 只判定/更新一次。
+ */
+function resolveQuoteColorUpdate(
+  targetId: string | null | undefined,
+  options: { parentId: string | null | undefined; quoteId: string | null | undefined },
+  nowIso: string,
+  seen: Set<string>
+): RecordItem | null {
+  if (!targetId || seen.has(targetId)) return null;
+  seen.add(targetId);
+  const target = useFlowStore.getState().records.find((r) => r.id === targetId);
+  if (!target) return null;
+  const isCrossDayBranch =
+    !!options.parentId && !options.quoteId &&
+    getLocalDateKey(target.created_at) !== getLocalDateKey(nowIso);
+  const needColor = !!options.quoteId || isCrossDayBranch;
+  if (needColor && !target.quote_color) {
+    return { ...target, quote_color: pickRandomQuoteColor(), updated_at: nowIso };
+  }
+  return null;
+}
+
 interface FlowState {
   homeLink: HomeLink | null;
   records: RecordItem[];
@@ -91,6 +119,22 @@ interface FlowState {
       value_priority?: ValuePriorityProfile | null;
     }
   ) => RecordItem;
+  /** K10：批量追加记录，避免拆解向导为 N 个子任务触发 N 轮独立 set + sync enqueue。 */
+  addRecords: (
+    items: Array<{
+      text: string;
+      options?: {
+        parent_id?: string | null;
+        tag_id?: string | null;
+        thread_id?: string | null;
+        quote_id?: string | null;
+        imgs?: string[];
+        bg_color?: string | null;
+        audio?: AudioAttachment | null;
+        value_priority?: ValuePriorityProfile | null;
+      };
+    }>
+  ) => RecordItem[];
   updateRecord: (
     id: string,
     updates: Partial<Pick<RecordItem, 'tag_id' | 'thread_id' | 'text' | 'quote_id' | 'imgs' | 'bg_color' | 'audio' | 'is_pinned' | 'pinned_at' | 'eisenhower_quadrant' | 'value_priority'>>
@@ -382,19 +426,13 @@ export const useFlowStore = create<FlowState>()(
         // 为"被引用/被分支"的源记录分配引用色(同源同色):
         // - 引用: 恒分配(首次随机, 之后复用)
         // - 分支: 仅跨天时分配(同天保持琥珀树形, 不额外上色)
-        let targetColorUpdate: RecordItem | null = null;
         const targetId = quoteId || parentId;
-        if (targetId) {
-          const target = get().records.find((r) => r.id === targetId);
-          if (target) {
-            const isCrossDayBranch =
-              !!parentId && !quoteId && getLocalDateKey(target.created_at) !== getLocalDateKey(nowIso);
-            const needColor = !!quoteId || isCrossDayBranch;
-            if (needColor && !target.quote_color) {
-              targetColorUpdate = { ...target, quote_color: pickRandomQuoteColor(), updated_at: nowIso };
-            }
-          }
-        }
+        const targetColorUpdate = resolveQuoteColorUpdate(
+          targetId,
+          { parentId, quoteId },
+          nowIso,
+          new Set<string>()
+        );
 
         const newRecord: RecordItem = {
           id: generateId(),
@@ -440,6 +478,70 @@ export const useFlowStore = create<FlowState>()(
         }
 
         return newRecord;
+      },
+
+      addRecords: (items) => {
+        const nowIso = new Date().toISOString();
+        const created: RecordItem[] = items
+          .filter((item) => item.text.trim())
+          .map((item) => ({
+            id: generateId(),
+            text: item.text.trim(),
+            created_at: nowIso,
+            updated_at: nowIso,
+            parent_id: item.options?.parent_id || null,
+            tag_id: item.options?.tag_id || null,
+            thread_id: item.options?.thread_id || null,
+            quote_id: item.options?.quote_id || null,
+            imgs: item.options?.imgs && item.options.imgs.length > 0 ? item.options.imgs : undefined,
+            bg_color: item.options?.bg_color || null,
+            audio: item.options?.audio || undefined,
+            value_priority: item.options?.value_priority || undefined,
+          }));
+        if (!created.length) return [];
+
+        // 与 addRecord 保持行为一致：批量创建分支时同样需要给父/引用源记录分配引用色。
+        // 批量场景下多个子任务通常共享同一 parent_id，seen 集合保证每个 target 只判定一次，
+        // 语义等价于「第一条 addRecord 分配、后续因已有色而跳过」。
+        const colorSeen = new Set<string>();
+        const targetColorUpdates: RecordItem[] = [];
+        created.forEach((record) => {
+          const update = resolveQuoteColorUpdate(
+            record.quote_id || record.parent_id,
+            { parentId: record.parent_id, quoteId: record.quote_id },
+            nowIso,
+            colorSeen
+          );
+          if (update) targetColorUpdates.push(update);
+        });
+
+        // 单次 set 写入全部记录（含引用色更新），并把涉及的思维线 last_used_at 只推进一次，
+        // 避免 N 次独立 set 触发 N 轮 store 订阅通知与重渲染。
+        const touchedThreadIds = new Set(
+          created.map((record) => record.thread_id).filter((id): id is string => Boolean(id))
+        );
+        const colorUpdatedIds = new Map(targetColorUpdates.map((item) => [item.id, item]));
+        set((state) => ({
+          records: [
+            ...state.records.map((r) => colorUpdatedIds.get(r.id) ?? r),
+            ...created,
+          ],
+          threads: touchedThreadIds.size
+            ? state.threads.map((thread) =>
+                touchedThreadIds.has(thread.id) ? { ...thread, last_used_at: nowIso } : thread
+              )
+            : state.threads,
+        }));
+
+        // 每条记录仍需独立推送（R2 是一对象一请求），但 enqueue 串行队列已保证顺序。
+        created.forEach((record) => triggerAutoSync((sync) => sync?.pushRecord(record)));
+        targetColorUpdates.forEach((record) => triggerAutoSync((sync) => sync?.pushRecord(record)));
+        touchedThreadIds.forEach((threadId) => {
+          const linkedThread = get().threads.find((thread) => thread.id === threadId);
+          if (linkedThread) triggerAutoSync((sync) => sync?.pushThread(linkedThread));
+        });
+
+        return created;
       },
 
       updateRecord: (id, updates) => {
