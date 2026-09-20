@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, type PersistStorage } from 'zustand/middleware';
 import {
   RecordItem,
   TagItem,
@@ -17,6 +17,7 @@ import { generateId, getLocalDateKey } from '../utils/dateUtils';
 import { pickRandomQuoteColor } from '../utils/quoteColors';
 import { createR2SyncService, reportR2SyncFailure } from '../sync';
 import { loadR2Settings, removeTombstoneRecords } from '../sync/credentials';
+import { quotaSafeStorage } from './quotaSafeStorage';
 
 function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) => Promise<void> | void) {
   if (!loadR2Settings().enabled) return;
@@ -134,13 +135,16 @@ interface FlowState {
   // Actions for DeskEdge rows / drawers / entries
   addDeskRow: () => DeskEdgeRow;
   updateDeskRowTitle: (rowId: string, title: string) => void;
-  deleteDeskRow: (rowId: string) => void;
+  deleteDeskRow: (rowId: string) => DeskEdgeRow | null;
+  restoreDeskRow: (row: DeskEdgeRow) => void;
   addDeskDrawer: (rowId: string) => DeskDrawer;
   updateDeskDrawerTitle: (drawerId: string, title: string) => void;
-  deleteDeskDrawer: (drawerId: string) => void;
+  deleteDeskDrawer: (drawerId: string) => { rowId: string; drawer: DeskDrawer; index: number } | null;
+  restoreDeskDrawer: (rowId: string, drawer: DeskDrawer, index: number) => void;
   addDeskEntry: (drawerId: string, text: string) => void;
   updateDeskEntry: (drawerId: string, entryId: string, text: string) => void;
-  deleteDeskEntry: (drawerId: string, entryId: string) => void;
+  deleteDeskEntry: (drawerId: string, entryId: string) => { drawerId: string; entry: DeskEntry; index: number } | null;
+  restoreDeskEntry: (drawerId: string, entry: DeskEntry, index: number) => boolean;
   toggleDeskDrawer: (drawerId: string, expanded: boolean) => void;
   toggleDeskDrawerDimmed: (drawerId: string) => void;
 }
@@ -854,10 +858,25 @@ export const useFlowStore = create<FlowState>()(
       },
 
       deleteDeskRow: (rowId) => {
+        const target = get().deskRows.find((row) => row.id === rowId);
+        if (!target) return null;
         set((state) => ({
           deskRows: state.deskRows.filter((row) => row.id !== rowId),
         }));
         triggerDeskRowSync(rowId, true);
+        return target;
+      },
+
+      restoreDeskRow: (row) => {
+        // 撤销删除整行：清墓碑后再 upsert 并推送，否则同步会因 isDeleted 短路。
+        set((state) =>
+          state.deskRows.some((item) => item.id === row.id)
+            ? { deskRows: state.deskRows.map((item) => (item.id === row.id ? row : item)) }
+            : { deskRows: [...state.deskRows, row] }
+        );
+        removeTombstoneRecords('desk', [row.id]);
+        triggerAutoSync((sync) => sync?.clearTombstones('desk', [row.id]));
+        triggerDeskRowSync(row.id);
       },
 
       addDeskDrawer: (rowId) => {
@@ -908,9 +927,14 @@ export const useFlowStore = create<FlowState>()(
 
       deleteDeskDrawer: (drawerId) => {
         const nowIso = new Date().toISOString();
+        const rows = get().deskRows;
+        const ownerRow = rows.find((row) => row.drawers.some((d) => d.id === drawerId));
+        if (!ownerRow) return null;
+        const index = ownerRow.drawers.findIndex((d) => d.id === drawerId);
+        const removed = { rowId: ownerRow.id, drawer: ownerRow.drawers[index], index };
         set((state) => ({
           deskRows: state.deskRows.map((row) =>
-            row.drawers.some((d) => d.id === drawerId)
+            row.id === ownerRow.id
               ? {
                   ...row,
                   drawers: row.drawers.filter((d) => d.id !== drawerId),
@@ -919,8 +943,23 @@ export const useFlowStore = create<FlowState>()(
               : row
           ),
         }));
-        const rowId = deskRowIdForDrawer(drawerId);
-        if (rowId) triggerDeskRowSync(rowId);
+        // 抽屉已从 state 移除，所以 rowId 必须在删除前取，不能再用 deskRowIdForDrawer 反查。
+        triggerDeskRowSync(removed.rowId);
+        return removed;
+      },
+
+      restoreDeskDrawer: (rowId, drawer, index) => {
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          deskRows: state.deskRows.map((row) => {
+            if (row.id !== rowId) return row;
+            if (row.drawers.some((d) => d.id === drawer.id)) return row;
+            const drawers = [...row.drawers];
+            drawers.splice(Math.max(0, Math.min(index, drawers.length)), 0, drawer);
+            return { ...row, drawers, updated_at: nowIso };
+          }),
+        }));
+        triggerDeskRowSync(rowId);
       },
 
       addDeskEntry: (drawerId, text) => {
@@ -985,10 +1024,17 @@ export const useFlowStore = create<FlowState>()(
 
       deleteDeskEntry: (drawerId, entryId) => {
         const nowIso = new Date().toISOString();
+        const rows = get().deskRows;
+        const ownerRow = rows.find((row) =>
+          row.drawers.some((d) => d.id === drawerId && d.entries.some((e) => e.id === entryId))
+        );
+        if (!ownerRow) return null;
+        const drawer = ownerRow.drawers.find((d) => d.id === drawerId)!;
+        const index = drawer.entries.findIndex((e) => e.id === entryId);
+        const removed = { drawerId, entry: drawer.entries[index], index };
         set((state) => ({
-          deskRows: state.deskRows.map((row) => {
-            const drawer = row.drawers.find((d) => d.id === drawerId);
-            return drawer
+          deskRows: state.deskRows.map((row) =>
+            row.id === ownerRow.id
               ? {
                   ...row,
                   drawers: row.drawers.map((d) =>
@@ -1002,11 +1048,35 @@ export const useFlowStore = create<FlowState>()(
                   ),
                   updated_at: nowIso,
                 }
-              : row;
-          }),
+              : row
+          ),
+        }));
+        triggerDeskRowSync(ownerRow.id);
+        return removed;
+      },
+
+      restoreDeskEntry: (drawerId, entry, index) => {
+        const nowIso = new Date().toISOString();
+        const rows = get().deskRows;
+        // 撤销前校验目标抽屉仍存在：若用户删 entry → 删 drawer → 撤销 entry，
+        // 目标抽屉已不在，静默 no-op 会让用户以为恢复成功。
+        const drawerExists = rows.some((row) => row.drawers.some((d) => d.id === drawerId));
+        if (!drawerExists) return false;
+        set((state) => ({
+          deskRows: state.deskRows.map((row) => ({
+            ...row,
+            drawers: row.drawers.map((d) => {
+              if (d.id !== drawerId) return d;
+              if (d.entries.some((e) => e.id === entry.id)) return d;
+              const entries = [...d.entries];
+              entries.splice(Math.max(0, Math.min(index, entries.length)), 0, entry);
+              return { ...d, entries, updated_at: nowIso };
+            }),
+          })),
         }));
         const rowId = deskRowIdForDrawer(drawerId);
         if (rowId) triggerDeskRowSync(rowId);
+        return true;
       },
 
       toggleDeskDrawer: (drawerId, expanded) => {
@@ -1086,6 +1156,9 @@ export const useFlowStore = create<FlowState>()(
       // into a production APK after upgrading from the prototype build.
       name: 'flow-01-storage-v3',
       version: 6,
+      // K9：单 key 承载全量数据，图片/语音以 base64 内嵌，接近 5MB 配额时
+      // 原实现会静默丢数据。quotaSafeStorage 在超配额时逐级剥离附件保住元数据。
+      storage: quotaSafeStorage as PersistStorage<FlowState>,
       // Navigation origin is session-only; keep the existing persistence behavior
       // for the rest of the store unchanged.
       partialize: (state): FlowState => ({ ...state, threadDetailReturnContext: null }),

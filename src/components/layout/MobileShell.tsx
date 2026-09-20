@@ -11,6 +11,7 @@ import { EisenhowerMatrixView } from '../../views/EisenhowerMatrixView';
 import { ValuePriorityMatrixView } from '../../views/ValuePriorityMatrixView';
 import { DeskEdgeView } from '../../views/DeskEdgeView';
 import { SyncProgressOverlay } from '../common/SyncProgressOverlay';
+import { StorageQuotaNotice } from '../common/StorageQuotaNotice';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
 import { triggerR2Sync } from '../../sync';
 import { SYSTEM_BACK_EVENT } from '../../hooks/useSystemBack';
@@ -87,6 +88,7 @@ export const MobileShell = () => {
   return (
     <div className="mobile-app-shell app-workspace h-dvh w-full overflow-hidden bg-slate-100 text-gray-800 flex">
       <SyncProgressOverlay />
+      <StorageQuotaNotice />
       <aside className="hidden md:flex w-56 lg:w-64 shrink-0 flex-col border-r border-slate-200 bg-white p-5" aria-label="主导航">
         <div className="flex items-center gap-3 mb-8">
           <img src="/icon-192.png" alt="" className="h-10 w-10 rounded-xl" />

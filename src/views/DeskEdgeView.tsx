@@ -13,7 +13,18 @@ import {
 } from 'lucide-react';
 import { useFlowStore } from '../store/useFlowStore';
 import { getLocalDateKey, formatTime } from '../utils/dateUtils';
+import { ConfirmDeleteModal } from '../components/modals/ConfirmDeleteModal';
 import type { DeskDrawer, DeskEdgeRow } from '../types';
+
+type PendingDelete =
+  | { kind: 'row'; rowId: string; row: DeskEdgeRow }
+  | { kind: 'drawer'; drawer: DeskDrawer }
+  | { kind: 'entry'; drawerId: string; entryId: string };
+
+type UndoState =
+  | { kind: 'row'; row: DeskEdgeRow; label: string }
+  | { kind: 'drawer'; rowId: string; drawer: DeskDrawer; index: number; label: string }
+  | { kind: 'entry'; drawerId: string; entry: DeskDrawer['entries'][number]; index: number; label: string };
 
 function latestEntryText(drawer: DeskDrawer): string {
   const last = drawer.entries[drawer.entries.length - 1];
@@ -32,6 +43,9 @@ export function DeskEdgeView() {
   const addDeskEntry = useFlowStore((s) => s.addDeskEntry);
   const updateDeskEntry = useFlowStore((s) => s.updateDeskEntry);
   const deleteDeskEntry = useFlowStore((s) => s.deleteDeskEntry);
+  const restoreDeskRow = useFlowStore((s) => s.restoreDeskRow);
+  const restoreDeskDrawer = useFlowStore((s) => s.restoreDeskDrawer);
+  const restoreDeskEntry = useFlowStore((s) => s.restoreDeskEntry);
   const toggleDeskDrawer = useFlowStore((s) => s.toggleDeskDrawer);
   const toggleDeskDrawerDimmed = useFlowStore((s) => s.toggleDeskDrawerDimmed);
 
@@ -44,6 +58,74 @@ export function DeskEdgeView() {
   const [entryDraft, setEntryDraft] = useState('');
   const [drawerDrafts, setDrawerDrafts] = useState<Record<string, string>>({});
   const drawerInputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [undoState, setUndoState] = useState<UndoState | null>(null);
+  const undoTimerRef = useRef<number | null>(null);
+
+  const showUndo = (state: UndoState) => {
+    if (undoTimerRef.current !== null) window.clearTimeout(undoTimerRef.current);
+    setUndoState(state);
+    undoTimerRef.current = window.setTimeout(() => {
+      setUndoState(null);
+      undoTimerRef.current = null;
+    }, 6000);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!pendingDelete) return;
+    if (pendingDelete.kind === 'row') {
+      const removed = deleteDeskRow(pendingDelete.rowId);
+      if (removed) showUndo({ kind: 'row', row: removed, label: '已删除桌邊整行' });
+    } else if (pendingDelete.kind === 'drawer') {
+      const removed = deleteDeskDrawer(pendingDelete.drawer.id);
+      if (removed) {
+        showUndo({
+          kind: 'drawer',
+          rowId: removed.rowId,
+          drawer: removed.drawer,
+          index: removed.index,
+          label: `已删除抽屉「${removed.drawer.title}」`,
+        });
+      }
+    } else {
+      const removed = deleteDeskEntry(pendingDelete.drawerId, pendingDelete.entryId);
+      if (removed) {
+        showUndo({
+          kind: 'entry',
+          drawerId: removed.drawerId,
+          entry: removed.entry,
+          index: removed.index,
+          label: '已删除文字',
+        });
+      }
+    }
+  };
+
+  const handleUndoDelete = () => {
+    if (!undoState) return;
+    if (undoState.kind === 'row') {
+      restoreDeskRow(undoState.row);
+    } else if (undoState.kind === 'drawer') {
+      restoreDeskDrawer(undoState.rowId, undoState.drawer, undoState.index);
+    } else {
+      // 目标抽屉可能已被删除（先删文字 → 删抽屉 → 撤销文字），此时恢复不可行。
+      const ok = restoreDeskEntry(undoState.drawerId, undoState.entry, undoState.index);
+      if (!ok) {
+        if (undoTimerRef.current !== null) window.clearTimeout(undoTimerRef.current);
+        setUndoState({ ...undoState, label: '所在抽屉已被删除，无法撤销' });
+        undoTimerRef.current = window.setTimeout(() => {
+          setUndoState(null);
+          undoTimerRef.current = null;
+        }, 4000);
+        return;
+      }
+    }
+    if (undoTimerRef.current !== null) {
+      window.clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    setUndoState(null);
+  };
 
   const isExpanded = useMemo(() => {
     const map = new Map<string, boolean>();
@@ -223,7 +305,7 @@ export function DeskEdgeView() {
                         <span className="shrink-0 text-[11px] text-gray-400">{row.drawers.length} 個抽屜</span>
                         <button
                           type="button"
-                          onClick={() => deleteDeskRow(row.id)}
+                          onClick={() => setPendingDelete({ kind: 'row', rowId: row.id, row })}
                           className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600"
                           title="刪除這一行與所有抽屜"
                           aria-label="刪除這一行"
@@ -429,7 +511,7 @@ export function DeskEdgeView() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => deleteDeskDrawer(drawer.id)}
+                                    onClick={() => setPendingDelete({ kind: 'drawer', drawer })}
                                     className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600"
                                     title="刪除抽屜"
                                     aria-label="刪除抽屜"
@@ -490,7 +572,13 @@ export function DeskEdgeView() {
                                               </button>
                                               <button
                                                 type="button"
-                                                onClick={() => deleteDeskEntry(drawer.id, entry.id)}
+                                                onClick={() =>
+                                                  setPendingDelete({
+                                                    kind: 'entry',
+                                                    drawerId: drawer.id,
+                                                    entryId: entry.id,
+                                                  })
+                                                }
                                                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600"
                                                 title="刪除文字"
                                                 aria-label="刪除文字"
@@ -544,6 +632,56 @@ export function DeskEdgeView() {
           </div>
         )}
       </div>
+
+      {undoState && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute left-4 bottom-6 z-40 flex max-w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-slate-200 bg-slate-900 px-3.5 py-2.5 text-xs text-white shadow-xl"
+        >
+          <span className="min-w-0 truncate">{undoState.label}</span>
+          <button
+            type="button"
+            onClick={handleUndoDelete}
+            className="shrink-0 rounded-lg px-2.5 py-1 font-semibold text-amber-300 transition-colors hover:bg-white/10 hover:text-amber-200"
+          >
+            撤销
+          </button>
+        </div>
+      )}
+
+      <ConfirmDeleteModal
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title={
+          pendingDelete?.kind === 'row'
+            ? '确定要删除这一行吗？'
+            : pendingDelete?.kind === 'drawer'
+            ? '确定要删除这个抽屉吗？'
+            : '确定要删除这条文字吗？'
+        }
+        description={
+          pendingDelete?.kind === 'row'
+            ? '该桌邊下的所有抽屉与文字都会被移除。'
+            : pendingDelete?.kind === 'drawer'
+            ? '该抽屉中的所有文字都会被移除。'
+            : undefined
+        }
+        recordText={
+          pendingDelete?.kind === 'row'
+            ? pendingDelete.row.title
+            : pendingDelete?.kind === 'drawer'
+            ? pendingDelete.drawer.title
+            : undefined
+        }
+        hasChildren={pendingDelete?.kind === 'row' && pendingDelete.row.drawers.length > 0}
+        childWarning={
+          pendingDelete?.kind === 'row'
+            ? `⚠️ 注意：该行下的 ${pendingDelete.row.drawers.length} 个抽屉也将一并被删除。`
+            : undefined
+        }
+      />
     </div>
   );
 }

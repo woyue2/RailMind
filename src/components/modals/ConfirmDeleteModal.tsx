@@ -8,6 +8,12 @@ interface ConfirmDeleteModalProps {
   onConfirm: () => void;
   recordText?: string;
   hasChildren?: boolean;
+  /** 自定义标题，缺省沿用记录删除文案 */
+  title?: string;
+  /** 自定义正文提示（如删除桌邊整行的二次说明） */
+  description?: string;
+  /** 自定义子级警示文案 */
+  childWarning?: string;
 }
 
 export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
@@ -16,6 +22,9 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
   onConfirm,
   recordText,
   hasChildren,
+  title,
+  description,
+  childWarning,
 }) => {
   useSystemBack(isOpen, onClose);
 
@@ -37,8 +46,12 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
 
         {/* Title & Description */}
         <h3 className="text-base font-semibold text-gray-900 mb-1">
-          确定要删除这条记录吗？
+          {title ?? '确定要删除这条记录吗？'}
         </h3>
+
+        {description && (
+          <p className="text-xs text-gray-500 mb-3 break-words">{description}</p>
+        )}
 
         {recordText && (
           <p className="text-xs text-gray-500 bg-gray-50 p-2.5 rounded-lg w-full mb-3 break-words line-clamp-3 text-left font-normal border border-gray-100">
@@ -48,7 +61,7 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
 
         {hasChildren && (
           <p className="text-[11.5px] text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md mb-3 font-medium">
-            ⚠️ 注意：该记录下的所有分支子记录也将一并被删除。
+            {childWarning ?? '⚠️ 注意：该记录下的所有分支子记录也将一并被删除。'}
           </p>
         )}
 
