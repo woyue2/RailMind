@@ -54,6 +54,16 @@ function deskRowIdForDrawer(drawerId: string): string {
 }
 
 /**
+ * 根據日期 key (yyyy-MM-dd) 生成桌邊 row 的自動標題。
+ * 例如 '2026-09-23' → '2026年9月23日'。
+ */
+function deskRowTitleForDate(dateKey: string): string {
+  const [y, m, d] = dateKey.split('-').map((n) => parseInt(n, 10));
+  if (!y || !m || !d) return dateKey;
+  return `${y}年${m}月${d}日`;
+}
+
+/**
  * 为「被引用/被分支」的源记录分配引用色（同源同色）：
  * - 引用（quote_id）：恒分配（首次随机，之后复用）
  * - 分支（parent_id）：仅跨天时分配（同天保持琥珀树形，不额外上色）
@@ -117,6 +127,7 @@ interface FlowState {
       bg_color?: string | null;
       audio?: AudioAttachment | null;
       value_priority?: ValuePriorityProfile | null;
+      skipAutoSync?: boolean;
     }
   ) => RecordItem;
   /** K10：批量追加记录，避免拆解向导为 N 个子任务触发 N 轮独立 set + sync enqueue。 */
@@ -179,10 +190,12 @@ interface FlowState {
 
   // Actions for DeskEdge rows / drawers / entries
   addDeskRow: () => DeskEdgeRow;
+  /** 按日期 key (yyyy-MM-dd) 查找對應的 row，不存在則自動建立。返回該 row。 */
+  ensureDeskRowForDate: (dateKey: string) => DeskEdgeRow;
   updateDeskRowTitle: (rowId: string, title: string) => void;
   deleteDeskRow: (rowId: string) => DeskEdgeRow | null;
   restoreDeskRow: (row: DeskEdgeRow) => void;
-  addDeskDrawer: (rowId: string) => DeskDrawer;
+  addDeskDrawer: (rowId: string) => DeskDrawer | null;
   updateDeskDrawerTitle: (drawerId: string, title: string) => void;
   deleteDeskDrawer: (drawerId: string) => { rowId: string; drawer: DeskDrawer; index: number } | null;
   restoreDeskDrawer: (rowId: string, drawer: DeskDrawer, index: number) => void;
@@ -191,7 +204,12 @@ interface FlowState {
   deleteDeskEntry: (drawerId: string, entryId: string) => { drawerId: string; entry: DeskEntry; index: number } | null;
   restoreDeskEntry: (drawerId: string, entry: DeskEntry, index: number) => boolean;
   toggleDeskDrawer: (drawerId: string, expanded: boolean) => void;
+  /** 改語義：批量切換該抽屜所有 entries 對應 records 的 is_completed；反轉也批量反轉。 */
   toggleDeskDrawerDimmed: (drawerId: string) => void;
+  /** 主時間流記錄收進桌邊抽屜：自動建 DeskEntry + 互寫 record_id/desk_entry_id。已綁定的記錄會移動到新抽屜。 */
+  bindRecordToDesk: (recordId: string, drawerId: string) => DeskEntry | null;
+  /** 解綁：record 清 desk_entry_id，對應的桌邊 entry 一併刪除。 */
+  unbindRecordFromDesk: (recordId: string) => void;
 }
 
 interface ThreadDetailReturnContext {
@@ -264,14 +282,27 @@ function normalizePersistedState(persistedState: unknown): PersistedFlowState {
   const state = (persistedState ?? {}) as Partial<FlowState>;
   const hydrated: FlowState = {
     ...state,
+    homeLink: state.homeLink ?? null,
+    tags: Array.isArray(state.tags) ? state.tags : [],
+    threads: Array.isArray(state.threads) ? state.threads : [],
+    deskRows: Array.isArray(state.deskRows) ? state.deskRows : [],
     activeTab: VALID_TABS.includes(state.activeTab as ActiveTab)
       ? (state.activeTab as ActiveTab)
       : 'record',
-    recordViewMode: state.recordViewMode ?? 'timeline',
-    timelineDateHeaderBackgroundOpacity: state.timelineDateHeaderBackgroundOpacity ?? 30,
-    dailyPageDateHeaderBackgroundOpacity: state.dailyPageDateHeaderBackgroundOpacity ?? 30,
-    deskRows: state.deskRows ?? [],
-    records: (state.records ?? []).map((record) => ({
+    selectedThreadId: state.selectedThreadId ?? null,
+    selectedDate: state.selectedDate ?? null,
+    fromReviewDate: state.fromReviewDate === true,
+    fromThreadDetailId: state.fromThreadDetailId ?? null,
+    recordViewMode: state.recordViewMode === 'daily-pages' ? 'daily-pages' : 'timeline',
+    timelineDateHeaderBackgroundOpacity:
+      typeof state.timelineDateHeaderBackgroundOpacity === 'number'
+        ? state.timelineDateHeaderBackgroundOpacity
+        : 30,
+    dailyPageDateHeaderBackgroundOpacity:
+      typeof state.dailyPageDateHeaderBackgroundOpacity === 'number'
+        ? state.dailyPageDateHeaderBackgroundOpacity
+        : 30,
+    records: (Array.isArray(state.records) ? state.records : []).map((record) => ({
       ...record,
       updated_at: record.updated_at ?? record.created_at,
     })),
@@ -356,7 +387,10 @@ export const useFlowStore = create<FlowState>()(
           };
         });
 
-        triggerAutoSync((sync) => sync?.pushRecord(newRecord));
+        // skipAutoSync: 由調用方自己補完字段（如 desk_entry_id）後再推送完整版本
+        if (!options.skipAutoSync) {
+          triggerAutoSync((sync) => sync?.pushRecord(newRecord));
+        }
         const linkedThread = threadId ? get().threads.find((thread) => thread.id === threadId) : undefined;
         if (linkedThread) triggerAutoSync((sync) => sync?.pushThread(linkedThread));
         if (targetColorUpdate) {
@@ -482,9 +516,39 @@ export const useFlowStore = create<FlowState>()(
         const removedRecords = records.filter((record) => removedIds.has(record.id));
         if (!removedRecords.length) return [];
 
-        set((state) => ({
-          records: state.records.filter((record) => !removedIds.has(record.id)),
-        }));
+        // 級聯：若被刪的 records 有 desk_entry_id → 從桌邊移除對應 entries（解綁）
+        const removedEntryIds = new Set<string>();
+        removedRecords.forEach((r) => {
+          if (r.desk_entry_id) removedEntryIds.add(r.desk_entry_id);
+        });
+
+        set((state) => {
+          let deskRows = state.deskRows;
+          if (removedEntryIds.size > 0) {
+            deskRows = state.deskRows.map((row) => ({
+              ...row,
+              drawers: row.drawers.map((d) => ({
+                ...d,
+                entries: d.entries.filter((e) => !removedEntryIds.has(e.id)),
+              })),
+            }));
+          }
+          return {
+            records: state.records.filter((record) => !removedIds.has(record.id)),
+            deskRows,
+          };
+        });
+
+        // 同步受影響的桌邊 rows
+        if (removedEntryIds.size > 0) {
+          const affectedRowIds = new Set<string>();
+          get().deskRows.forEach((row) => {
+            if (row.drawers.some((d) => d.entries.some((e) => removedEntryIds.has(e.id)))) {
+              affectedRowIds.add(row.id);
+            }
+          });
+          affectedRowIds.forEach((rowId) => triggerDeskRowSync(rowId));
+        }
 
         removedRecords.forEach((record) => triggerAutoSync((sync) => sync?.deleteRecord(record.id)));
         return removedRecords;
@@ -576,9 +640,11 @@ export const useFlowStore = create<FlowState>()(
           return { records: updatedRecords };
         });
 
-        if (targetRecord) {
-          triggerAutoSync((sync) => sync?.pushRecord(targetRecord!));
+        if (!targetRecord) {
+          console.warn('[toggleCompletedRecord] record 不存在:', id);
+          return;
         }
+        triggerAutoSync((sync) => sync?.pushRecord(targetRecord!));
       },
 
       createThread: (title) => {
@@ -848,9 +914,29 @@ export const useFlowStore = create<FlowState>()(
 
       addDeskRow: () => {
         const nowIso = new Date().toISOString();
+        const todayKey = getLocalDateKey(nowIso);
         const newRow: DeskEdgeRow = {
           id: generateId(),
-          title: `桌邊 ${get().deskRows.length + 1}`,
+          title: deskRowTitleForDate(todayKey),
+          drawers: [],
+          created_at: nowIso,
+          updated_at: nowIso,
+        };
+        set((state) => ({ deskRows: [...state.deskRows, newRow] }));
+        triggerDeskRowSync(newRow.id);
+        return newRow;
+      },
+
+      ensureDeskRowForDate: (dateKey) => {
+        const rows = get().deskRows;
+        // Row 的日期由 row.created_at 決定（Row 就是日期容器），直接比本地日期 key
+        const match = rows.find((row) => getLocalDateKey(row.created_at) === dateKey);
+        if (match) return match;
+        // 不存在 → 自動建立
+        const nowIso = new Date().toISOString();
+        const newRow: DeskEdgeRow = {
+          id: generateId(),
+          title: deskRowTitleForDate(dateKey),
           drawers: [],
           created_at: nowIso,
           updated_at: nowIso,
@@ -873,28 +959,87 @@ export const useFlowStore = create<FlowState>()(
       },
 
       deleteDeskRow: (rowId) => {
+        const nowIso = new Date().toISOString();
         const target = get().deskRows.find((row) => row.id === rowId);
         if (!target) return null;
-        set((state) => ({
-          deskRows: state.deskRows.filter((row) => row.id !== rowId),
-        }));
+
+        // 收集該 row 下所有 entries 的 record_id，級聯解綁
+        const relatedRecordIds: string[] = [];
+        target.drawers.forEach((d) =>
+          d.entries.forEach((e) => {
+            if (e.record_id) relatedRecordIds.push(e.record_id);
+          })
+        );
+
+        set((state) => {
+          let records = state.records;
+          if (relatedRecordIds.length > 0) {
+            records = state.records.map((r) =>
+              relatedRecordIds.includes(r.id)
+                ? { ...r, desk_entry_id: null, updated_at: nowIso }
+                : r
+            );
+          }
+          return {
+            records,
+            deskRows: state.deskRows.filter((row) => row.id !== rowId),
+          };
+        });
+
+        // 同步解綁後的 records
+        if (relatedRecordIds.length > 0) {
+          const updatedRecords = get().records.filter((r) => relatedRecordIds.includes(r.id));
+          updatedRecords.forEach((r) => triggerAutoSync((sync) => sync?.pushRecord(r)));
+        }
         triggerDeskRowSync(rowId, true);
         return target;
       },
 
       restoreDeskRow: (row) => {
         // 撤销删除整行：清墓碑后再 upsert 并推送，否则同步会因 isDeleted 短路。
-        set((state) =>
-          state.deskRows.some((item) => item.id === row.id)
-            ? { deskRows: state.deskRows.map((item) => (item.id === row.id ? row : item)) }
-            : { deskRows: [...state.deskRows, row] }
+        // 同時恢復該 row 下所有 entries 對應 records 的 desk_entry_id（之前 deleteDeskRow 級聯解綁了）。
+        const nowIso = new Date().toISOString();
+        const restorations: { recordId: string; entryId: string }[] = [];
+        row.drawers.forEach((d) =>
+          d.entries.forEach((e) => {
+            if (e.record_id && e.id) restorations.push({ recordId: e.record_id, entryId: e.id });
+          })
         );
+
+        set((state) => {
+          let records = state.records;
+          if (restorations.length > 0) {
+            records = state.records.map((r) => {
+              const match = restorations.find((x) => x.recordId === r.id);
+              if (match) return { ...r, desk_entry_id: match.entryId, updated_at: nowIso };
+              return r;
+            });
+          }
+          return {
+            records,
+            deskRows: state.deskRows.some((item) => item.id === row.id)
+              ? state.deskRows.map((item) => (item.id === row.id ? row : item))
+              : [...state.deskRows, row],
+          };
+        });
+
+        // 同步恢復後的 records
+        restorations.forEach(({ recordId }) => {
+          const updated = get().records.find((r) => r.id === recordId);
+          if (updated) triggerAutoSync((sync) => sync?.pushRecord(updated));
+        });
         removeTombstoneRecords('desk', [row.id]);
         triggerAutoSync((sync) => sync?.clearTombstones('desk', [row.id]));
         triggerDeskRowSync(row.id);
       },
 
       addDeskDrawer: (rowId) => {
+        // 先確認 row 存在（防止傳入已被刪除的 rowId 導致 newDrawer 保持 null）
+        const rowExists = get().deskRows.some((r) => r.id === rowId);
+        if (!rowExists) {
+          console.warn('[addDeskDrawer] rowId 不存在:', rowId);
+          return null;
+        }
         const nowIso = new Date().toISOString();
         let newDrawer: DeskDrawer | null = null;
         set((state) => ({
@@ -915,7 +1060,7 @@ export const useFlowStore = create<FlowState>()(
           }),
         }));
         triggerDeskRowSync(rowId);
-        return newDrawer!;
+        return newDrawer;
       },
 
       updateDeskDrawerTitle: (drawerId, title) => {
@@ -947,33 +1092,76 @@ export const useFlowStore = create<FlowState>()(
         if (!ownerRow) return null;
         const index = ownerRow.drawers.findIndex((d) => d.id === drawerId);
         const removed = { rowId: ownerRow.id, drawer: ownerRow.drawers[index], index };
-        set((state) => ({
-          deskRows: state.deskRows.map((row) =>
-            row.id === ownerRow.id
-              ? {
-                  ...row,
-                  drawers: row.drawers.filter((d) => d.id !== drawerId),
-                  updated_at: nowIso,
-                }
-              : row
-          ),
-        }));
-        // 抽屉已从 state 移除，所以 rowId 必须在删除前取，不能再用 deskRowIdForDrawer 反查。
+
+        // 收集該抽屜所有 entries 的 record_id，級聯解綁
+        const relatedRecordIds = removed.drawer.entries
+          .map((e) => e.record_id)
+          .filter((id): id is string => Boolean(id));
+
+        set((state) => {
+          let records = state.records;
+          if (relatedRecordIds.length > 0) {
+            records = state.records.map((r) =>
+              relatedRecordIds.includes(r.id)
+                ? { ...r, desk_entry_id: null, updated_at: nowIso }
+                : r
+            );
+          }
+          return {
+            records,
+            deskRows: state.deskRows.map((row) =>
+              row.id === ownerRow.id
+                ? {
+                    ...row,
+                    drawers: row.drawers.filter((d) => d.id !== drawerId),
+                    updated_at: nowIso,
+                  }
+                : row
+            ),
+          };
+        });
+
+        if (relatedRecordIds.length > 0) {
+          const updatedRecords = get().records.filter((r) => relatedRecordIds.includes(r.id));
+          updatedRecords.forEach((r) => triggerAutoSync((sync) => sync?.pushRecord(r)));
+        }
         triggerDeskRowSync(removed.rowId);
         return removed;
       },
 
       restoreDeskDrawer: (rowId, drawer, index) => {
         const nowIso = new Date().toISOString();
-        set((state) => ({
-          deskRows: state.deskRows.map((row) => {
-            if (row.id !== rowId) return row;
-            if (row.drawers.some((d) => d.id === drawer.id)) return row;
-            const drawers = [...row.drawers];
-            drawers.splice(Math.max(0, Math.min(index, drawers.length)), 0, drawer);
-            return { ...row, drawers, updated_at: nowIso };
-          }),
-        }));
+        // 同時恢復該抽屜所有 entries 對應 records 的 desk_entry_id
+        const restorations: { recordId: string; entryId: string }[] = [];
+        drawer.entries.forEach((e) => {
+          if (e.record_id && e.id) restorations.push({ recordId: e.record_id, entryId: e.id });
+        });
+
+        set((state) => {
+          let records = state.records;
+          if (restorations.length > 0) {
+            records = state.records.map((r) => {
+              const match = restorations.find((x) => x.recordId === r.id);
+              if (match) return { ...r, desk_entry_id: match.entryId, updated_at: nowIso };
+              return r;
+            });
+          }
+          return {
+            records,
+            deskRows: state.deskRows.map((row) => {
+              if (row.id !== rowId) return row;
+              if (row.drawers.some((d) => d.id === drawer.id)) return row;
+              const drawers = [...row.drawers];
+              drawers.splice(Math.max(0, Math.min(index, drawers.length)), 0, drawer);
+              return { ...row, drawers, updated_at: nowIso };
+            }),
+          };
+        });
+
+        restorations.forEach(({ recordId }) => {
+          const updated = get().records.find((r) => r.id === recordId);
+          if (updated) triggerAutoSync((sync) => sync?.pushRecord(updated));
+        });
         triggerDeskRowSync(rowId);
       },
 
@@ -981,37 +1169,16 @@ export const useFlowStore = create<FlowState>()(
         const trimmed = text.trim();
         if (!trimmed) return;
         const nowIso = new Date().toISOString();
-        const entry: DeskEntry = {
-          id: generateId(),
-          text: trimmed,
-          created_at: nowIso,
-          updated_at: nowIso,
-        };
-        set((state) => ({
-          deskRows: state.deskRows.map((row) => {
-            const drawer = row.drawers.find((d) => d.id === drawerId);
-            return drawer
-              ? {
-                  ...row,
-                  drawers: row.drawers.map((d) =>
-                    d.id === drawerId
-                      ? { ...d, entries: [...d.entries, entry], updated_at: nowIso }
-                      : d
-                  ),
-                  updated_at: nowIso,
-                }
-              : row;
-          }),
-        }));
-        const rowId = deskRowIdForDrawer(drawerId);
-        if (rowId) triggerDeskRowSync(rowId);
-      },
+        const newEntryId = generateId();
+        // 1. 建立時間流 record，skipAutoSync=true 因為此時 record 還沒有 desk_entry_id
+        //    （addRecord 內部的 thread push 不受影響，只跳過 newRecord 本身的 push）
+        const record = get().addRecord(trimmed, { skipAutoSync: true });
 
-      updateDeskEntry: (drawerId, entryId, text) => {
-        const trimmed = text.trim();
-        if (!trimmed) return;
-        const nowIso = new Date().toISOString();
+        // 2. 補 entry 的 record_id 和 record 的 desk_entry_id（一次 set 同時改 deskRows + records）
         set((state) => ({
+          records: state.records.map((r) =>
+            r.id === record.id ? { ...r, desk_entry_id: newEntryId } : r
+          ),
           deskRows: state.deskRows.map((row) => {
             const drawer = row.drawers.find((d) => d.id === drawerId);
             return drawer
@@ -1021,9 +1188,16 @@ export const useFlowStore = create<FlowState>()(
                     d.id === drawerId
                       ? {
                           ...d,
-                          entries: d.entries.map((e) =>
-                            e.id === entryId ? { ...e, text: trimmed, updated_at: nowIso } : e
-                          ),
+                          entries: [
+                            ...d.entries,
+                            {
+                              id: newEntryId,
+                              text: trimmed,
+                              created_at: nowIso,
+                              updated_at: nowIso,
+                              record_id: record.id,
+                            },
+                          ],
                           updated_at: nowIso,
                         }
                       : d
@@ -1033,6 +1207,66 @@ export const useFlowStore = create<FlowState>()(
               : row;
           }),
         }));
+
+        // 3. 補完 desk_entry_id 後推送完整版本（唯一的一次 push）
+        const finalRecord = get().records.find((r) => r.id === record.id);
+        if (finalRecord) triggerAutoSync((sync) => sync?.pushRecord(finalRecord));
+        const rowId = deskRowIdForDrawer(drawerId);
+        if (rowId) triggerDeskRowSync(rowId);
+      },
+
+      updateDeskEntry: (drawerId, entryId, text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const nowIso = new Date().toISOString();
+
+        // 先查 entry 的 record_id，用於同步更新 record.text
+        const rows = get().deskRows;
+        const ownerRow = rows.find((row) =>
+          row.drawers.some((d) => d.id === drawerId && d.entries.some((e) => e.id === entryId))
+        );
+        const existingEntry = ownerRow
+          ? ownerRow.drawers.find((d) => d.id === drawerId)?.entries.find((e) => e.id === entryId)
+          : undefined;
+        const relatedRecordId = existingEntry?.record_id;
+
+        set((state) => {
+          let records = state.records;
+          if (relatedRecordId) {
+            records = state.records.map((r) =>
+              r.id === relatedRecordId ? { ...r, text: trimmed, updated_at: nowIso } : r
+            );
+          }
+          return {
+            records,
+            deskRows: state.deskRows.map((row) => {
+              const drawer = row.drawers.find((d) => d.id === drawerId);
+              return drawer
+                ? {
+                    ...row,
+                    drawers: row.drawers.map((d) =>
+                      d.id === drawerId
+                        ? {
+                            ...d,
+                            entries: d.entries.map((e) =>
+                              e.id === entryId ? { ...e, text: trimmed, updated_at: nowIso } : e
+                            ),
+                            updated_at: nowIso,
+                          }
+                        : d
+                    ),
+                    updated_at: nowIso,
+                  }
+                : row;
+            }),
+          };
+        });
+
+        // 同步更新後的 record
+        if (relatedRecordId) {
+          const updatedRecord = get().records.find((r) => r.id === relatedRecordId);
+          if (updatedRecord) triggerAutoSync((sync) => sync?.pushRecord(updatedRecord));
+        }
         const rowId = deskRowIdForDrawer(drawerId);
         if (rowId) triggerDeskRowSync(rowId);
       },
@@ -1047,25 +1281,44 @@ export const useFlowStore = create<FlowState>()(
         const drawer = ownerRow.drawers.find((d) => d.id === drawerId)!;
         const index = drawer.entries.findIndex((e) => e.id === entryId);
         const removed = { drawerId, entry: drawer.entries[index], index };
-        set((state) => ({
-          deskRows: state.deskRows.map((row) =>
-            row.id === ownerRow.id
-              ? {
-                  ...row,
-                  drawers: row.drawers.map((d) =>
-                    d.id === drawerId
-                      ? {
-                          ...d,
-                          entries: d.entries.filter((e) => e.id !== entryId),
-                          updated_at: nowIso,
-                        }
-                      : d
-                  ),
-                  updated_at: nowIso,
-                }
-              : row
-          ),
-        }));
+
+        // 解綁 record：若 entry 有 record_id，把對應 record 的 desk_entry_id 清 null
+        const relatedRecordId = removed.entry.record_id;
+
+        set((state) => {
+          let records = state.records;
+          if (relatedRecordId) {
+            records = state.records.map((r) =>
+              r.id === relatedRecordId ? { ...r, desk_entry_id: null, updated_at: nowIso } : r
+            );
+          }
+          return {
+            records,
+            deskRows: state.deskRows.map((row) =>
+              row.id === ownerRow.id
+                ? {
+                    ...row,
+                    drawers: row.drawers.map((d) =>
+                      d.id === drawerId
+                        ? {
+                            ...d,
+                            entries: d.entries.filter((e) => e.id !== entryId),
+                            updated_at: nowIso,
+                          }
+                        : d
+                    ),
+                    updated_at: nowIso,
+                  }
+                : row
+            ),
+          };
+        });
+
+        // 同步解綁後的 record（若有）
+        if (relatedRecordId) {
+          const updatedRecord = get().records.find((r) => r.id === relatedRecordId);
+          if (updatedRecord) triggerAutoSync((sync) => sync?.pushRecord(updatedRecord));
+        }
         triggerDeskRowSync(ownerRow.id);
         return removed;
       },
@@ -1077,18 +1330,38 @@ export const useFlowStore = create<FlowState>()(
         // 目标抽屉已不在，静默 no-op 会让用户以为恢复成功。
         const drawerExists = rows.some((row) => row.drawers.some((d) => d.id === drawerId));
         if (!drawerExists) return false;
-        set((state) => ({
-          deskRows: state.deskRows.map((row) => ({
-            ...row,
-            drawers: row.drawers.map((d) => {
-              if (d.id !== drawerId) return d;
-              if (d.entries.some((e) => e.id === entry.id)) return d;
-              const entries = [...d.entries];
-              entries.splice(Math.max(0, Math.min(index, entries.length)), 0, entry);
-              return { ...d, entries, updated_at: nowIso };
-            }),
-          })),
-        }));
+
+        // 同時恢復 record.desk_entry_id——但先確認 record 還在（可能用戶已經在時間流裡把它刪了）
+        const relatedRecordId = entry.record_id;
+        const relatedRecordExists = relatedRecordId
+          ? get().records.some((r) => r.id === relatedRecordId)
+          : false;
+        set((state) => {
+          let records = state.records;
+          if (relatedRecordId && relatedRecordExists) {
+            records = state.records.map((r) =>
+              r.id === relatedRecordId ? { ...r, desk_entry_id: entry.id, updated_at: nowIso } : r
+            );
+          }
+          return {
+            records,
+            deskRows: state.deskRows.map((row) => ({
+              ...row,
+              drawers: row.drawers.map((d) => {
+                if (d.id !== drawerId) return d;
+                if (d.entries.some((e) => e.id === entry.id)) return d;
+                const entries = [...d.entries];
+                entries.splice(Math.max(0, Math.min(index, entries.length)), 0, entry);
+                return { ...d, entries, updated_at: nowIso };
+              }),
+            })),
+          };
+        });
+
+        if (relatedRecordId && relatedRecordExists) {
+          const updated = get().records.find((r) => r.id === relatedRecordId);
+          if (updated) triggerAutoSync((sync) => sync?.pushRecord(updated));
+        }
         const rowId = deskRowIdForDrawer(drawerId);
         if (rowId) triggerDeskRowSync(rowId);
         return true;
@@ -1097,33 +1370,32 @@ export const useFlowStore = create<FlowState>()(
       toggleDeskDrawer: (drawerId, expanded) => {
         const nowIso = new Date().toISOString();
         const todayKey = getLocalDateKey(new Date().toISOString());
+        // 互斥：expanded=true 時，把所有 rows 裡其他 drawer 的 expanded_override 都設成 false
+        // （不限同一 row，因為 DeskEdgeView 會把多個 rows 聚合成同一日期段落顯示）
         set((state) => ({
-          deskRows: state.deskRows.map((row) => {
-            if (!row.drawers.some((d) => d.id === drawerId)) return row;
-            return {
-              ...row,
-              drawers: row.drawers.map((d) => {
-                if (d.id === drawerId) {
-                  return {
-                    ...d,
-                    expanded_override: expanded,
-                    expanded_override_date: todayKey,
-                    state_updated_at: nowIso,
-                  };
-                }
-                if (expanded) {
-                  return {
-                    ...d,
-                    expanded_override: false,
-                    expanded_override_date: todayKey,
-                    state_updated_at: nowIso,
-                  };
-                }
-                return d;
-              }),
-              state_updated_at: nowIso,
-            };
-          }),
+          deskRows: state.deskRows.map((row) => ({
+            ...row,
+            drawers: row.drawers.map((d) => {
+              if (d.id === drawerId) {
+                return {
+                  ...d,
+                  expanded_override: expanded,
+                  expanded_override_date: todayKey,
+                  state_updated_at: nowIso,
+                };
+              }
+              if (expanded) {
+                return {
+                  ...d,
+                  expanded_override: false,
+                  expanded_override_date: todayKey,
+                  state_updated_at: nowIso,
+                };
+              }
+              return d;
+            }),
+            state_updated_at: nowIso,
+          })),
         }));
         const rowId = deskRowIdForDrawer(drawerId);
         if (rowId) triggerDeskRowSync(rowId);
@@ -1131,22 +1403,189 @@ export const useFlowStore = create<FlowState>()(
 
       toggleDeskDrawerDimmed: (drawerId) => {
         const nowIso = new Date().toISOString();
+        // 1. 查該抽屜所有 entries 對應的 records 的 is_completed 狀態
+        const rows = get().deskRows;
+        const drawer = rows.reduce<DeskDrawer | null>((acc, row) => {
+          if (acc) return acc;
+          return row.drawers.find((d) => d.id === drawerId) ?? null;
+        }, null);
+        if (!drawer) return;
+
+        const relatedRecordIds = drawer.entries
+          .map((e) => e.record_id)
+          .filter((id): id is string => Boolean(id));
+
+        // 空抽屜 → 無可 tick 條目，直接 no-op
+        if (relatedRecordIds.length === 0) return;
+
+        // 2. 決定方向：若所有 records 都已完成 → 全部取消；否則全部設為完成
+        const records = get().records;
+        const relatedRecords = relatedRecordIds
+          .map((id) => records.find((r) => r.id === id))
+          .filter((r): r is NonNullable<typeof r> => Boolean(r));
+        const allCompleted = relatedRecords.length > 0 && relatedRecords.every((r) => r.is_completed);
+        const nextCompleted = !allCompleted;
+
+        // 3. 一次 set 只改 records.is_completed（drawer 的 dimmed 從 records 派生，不需要寫 drawer.is_dimmed）
         set((state) => ({
+          records: state.records.map((r) =>
+            relatedRecordIds.includes(r.id)
+              ? { ...r, is_completed: nextCompleted, updated_at: nowIso }
+              : r
+          ),
+        }));
+
+        // 4. 批量 push records
+        relatedRecords.forEach((r) => {
+          const updated = get().records.find((x) => x.id === r.id);
+          if (updated) triggerAutoSync((sync) => sync?.pushRecord(updated));
+        });
+        const rowId = deskRowIdForDrawer(drawerId);
+        if (rowId) triggerDeskRowSync(rowId);
+      },
+
+      bindRecordToDesk: (recordId, drawerId) => {
+        const nowIso = new Date().toISOString();
+        const record = get().records.find((r) => r.id === recordId);
+        if (!record) return null;
+
+        // 0. 若 record 已綁桌邊 → 先查它是否已經在目標抽屜（短路避免多餘的 delete+create）
+        const prevEntryId = record.desk_entry_id;
+        if (prevEntryId) {
+          // 找到舊 entry 所在抽屜
+          const prevEntryLocation = get().deskRows.reduce<{ rowId: string; drawerId: string } | null>(
+            (acc, row) => {
+              if (acc) return acc;
+              const drawer = row.drawers.find((d) => d.entries.some((e) => e.id === prevEntryId));
+              return drawer ? { rowId: row.id, drawerId: drawer.id } : null;
+            },
+            null
+          );
+          if (prevEntryLocation && prevEntryLocation.drawerId === drawerId) {
+            // 已經在目標抽屜了，什麼都不做
+            return null;
+          }
+        }
+
+        // 1. 若 record 已綁桌邊（且不在目標抽屜）→ 先解綁（移動語義）
+        if (prevEntryId) {
+          const oldOwnerRow = get().deskRows.find((row) =>
+            row.drawers.some((d) => d.entries.some((e) => e.id === prevEntryId))
+          );
+          if (oldOwnerRow) {
+            const oldOwnerRowId = oldOwnerRow.id;
+            set((state) => ({
+              deskRows: state.deskRows.map((row) =>
+                row.id === oldOwnerRowId
+                  ? {
+                      ...row,
+                      drawers: row.drawers.map((d) => ({
+                        ...d,
+                        entries: d.entries.filter((e) => e.id !== prevEntryId),
+                        updated_at: nowIso,
+                      })),
+                      updated_at: nowIso,
+                    }
+                  : row
+              ),
+            }));
+            triggerDeskRowSync(oldOwnerRowId);
+          }
+        }
+
+        // 1. 確保目標 drawer 存在 + 它的 row 存在
+        const targetRowId = deskRowIdForDrawer(drawerId);
+        if (!targetRowId) return null;
+
+        // 2. 建新 entry + 互寫 ID
+        const newEntryId = generateId();
+        let finalRowId = targetRowId;
+        set((state) => ({
+          records: state.records.map((r) =>
+            r.id === recordId ? { ...r, desk_entry_id: newEntryId, updated_at: nowIso } : r
+          ),
           deskRows: state.deskRows.map((row) => {
-            if (!row.drawers.some((d) => d.id === drawerId)) return row;
+            if (row.id !== targetRowId) return row;
+            const drawer = row.drawers.find((d) => d.id === drawerId);
+            if (!drawer) return row;
             return {
               ...row,
               drawers: row.drawers.map((d) =>
                 d.id === drawerId
-                  ? { ...d, is_dimmed: !d.is_dimmed, state_updated_at: nowIso }
+                  ? {
+                      ...d,
+                      entries: [
+                        ...d.entries,
+                        {
+                          id: newEntryId,
+                          text: record.text,
+                          created_at: record.created_at,
+                          updated_at: nowIso,
+                          record_id: record.id,
+                        },
+                      ],
+                      updated_at: nowIso,
+                    }
                   : d
               ),
-              state_updated_at: nowIso,
+              updated_at: nowIso,
             };
           }),
         }));
-        const rowId = deskRowIdForDrawer(drawerId);
-        if (rowId) triggerDeskRowSync(rowId);
+
+        // 3. push
+        const finalRecord = get().records.find((r) => r.id === recordId);
+        if (finalRecord) triggerAutoSync((sync) => sync?.pushRecord(finalRecord));
+        triggerDeskRowSync(finalRowId);
+
+        return {
+          id: newEntryId,
+          text: record.text,
+          created_at: record.created_at,
+          updated_at: nowIso,
+          record_id: record.id,
+        };
+      },
+
+      unbindRecordFromDesk: (recordId) => {
+        const nowIso = new Date().toISOString();
+        const record = get().records.find((r) => r.id === recordId);
+        if (!record?.desk_entry_id) return;
+
+        const entryId = record.desk_entry_id;
+        // 找到 entry 所在位置
+        const ownerRow = get().deskRows.find((row) =>
+          row.drawers.some((d) => d.entries.some((e) => e.id === entryId))
+        );
+
+        set((state) => {
+          let deskRows = state.deskRows;
+          if (ownerRow) {
+            deskRows = state.deskRows.map((row) =>
+              row.id === ownerRow.id
+                ? {
+                    ...row,
+                    drawers: row.drawers.map((d) => ({
+                      ...d,
+                      entries: d.entries.filter((e) => e.id !== entryId),
+                      updated_at: nowIso,
+                    })),
+                    updated_at: nowIso,
+                  }
+                : row
+            );
+          }
+          return {
+            records: state.records.map((r) =>
+              r.id === recordId ? { ...r, desk_entry_id: null, updated_at: nowIso } : r
+            ),
+            deskRows,
+          };
+        });
+
+        if (ownerRow) triggerDeskRowSync(ownerRow.id);
+        const finalRecord = get().records.find((r) => r.id === recordId);
+        if (finalRecord) triggerAutoSync((sync) => sync?.pushRecord(finalRecord));
       },
     }),
     {
@@ -1157,7 +1596,7 @@ export const useFlowStore = create<FlowState>()(
       // activeTab: 'widgets'，反序列化后所有渲染分支都不匹配 → 白屏。
       // migrate 负责把非法 activeTab 兜底回 'record'，故必须 bump 版本号。
       version: 7,
-      // K9：单 key 承载全量数据，图片/语音以 base64 内嵌，接近 5MB 配额时
+      // K9：单 key 承载全量数据，图片/语音以 base64 内嵌，接近 8MB 本地预算时
       // 原实现会静默丢数据。quotaSafeStorage 在超配额时逐级剥离附件保住元数据。
       // quotaSafeStorage 是泛型工厂：显式指定持久化形状，无需在此强转。
       storage: createQuotaSafeStorage<PersistedFlowState>(),

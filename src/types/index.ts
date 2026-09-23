@@ -47,6 +47,7 @@ export interface RecordItem {
   is_completed?: boolean; // 是否已完成（兼容旧数据可缺省）
   eisenhower_quadrant?: EisenhowerQuadrant | null; // 艾森豪矩陣象限；空值表示未加入
   value_priority?: ValuePriorityProfile | null; // 價值 × 晚做損失新版四象限；與舊矩陣獨立
+  desk_entry_id?: string | null; // 若來自桌邊抽屜 entry，此處記 entry id（單向綁定：一條 record 只屬於一個 entry）
 }
 
 // Tag 标签数据模型
@@ -77,6 +78,7 @@ export interface DeskEntry {
   text: string;
   created_at: string; // ISO 8601
   updated_at: string; // ISO 8601
+  record_id?: string | null; // 同步到時間流的 record id；若用戶從主時間流收進來也會有此字段
 }
 
 export interface DeskDrawer {

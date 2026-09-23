@@ -5,7 +5,8 @@ import { createJSONStorage, type PersistStorage, type StorageValue } from 'zusta
  *
  * 现状风险：`flow-01-storage-v3` 一个 key 存全部 records / tags / threads / deskRows，
  * 图片与语音均以 base64 字符串内嵌（RecordItem.imgs / RecordItem.audio.url）。
- * localStorage 通常只有 ~5MB 配额，图片多时 setItem 会抛 QuotaExceededError，
+ * 本应用按 8MB localStorage 预算兜底；实际配额仍取决于浏览器/WebView，
+ * 图片多时 setItem 会抛 QuotaExceededError，
  * 而 zustand persist 的错误会被吞掉 —— 表现为「部分/全部数据静默丢失」。
  *
  * 兜底策略（逐级降级，优先保住结构化元数据）：
@@ -16,6 +17,9 @@ import { createJSONStorage, type PersistStorage, type StorageValue } from 'zusta
  *
  * 被剥离的内容只存在于本次内存会话，后续可通过 R2 同步恢复（若已配置）。
  */
+
+/** 应用声明给用户看的本地存储预算线（真实浏览器配额可能更低）。 */
+const LOCAL_STORAGE_BUDGET_MB = 8;
 
 export interface QuotaStripReport {
   /** 本次持久化因配额被剥离图片的记录数 */
@@ -121,7 +125,7 @@ export function createQuotaSafeStorage<S>(): PersistStorage<S> {
         try {
           baseSetItem(name, value);
           console.warn(
-            `[quotaSafeStorage] localStorage 配额不足，已剥离 ${imageCount} 条记录的图片以保住元数据。`
+            `[quotaSafeStorage] localStorage 配额不足（预算 ${LOCAL_STORAGE_BUDGET_MB}MB），已剥离 ${imageCount} 条记录的图片以保住元数据。`
           );
           publish({ strippedImages: imageCount, strippedAudio: 0, failed: false });
           return;
@@ -139,7 +143,7 @@ export function createQuotaSafeStorage<S>(): PersistStorage<S> {
         try {
           baseSetItem(name, value);
           console.warn(
-            `[quotaSafeStorage] 配额持续不足，进一步剥离 ${audioCount} 条记录的语音以保住元数据。`
+            `[quotaSafeStorage] 配额持续不足（预算 ${LOCAL_STORAGE_BUDGET_MB}MB），进一步剥离 ${audioCount} 条记录的语音以保住元数据。`
           );
           publish({ strippedImages: imageCount, strippedAudio: audioCount, failed: false });
           return;

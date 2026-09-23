@@ -9,7 +9,7 @@ import {
 /**
  * K9 配套：把 localStorage 配额降级从「静默 console.warn」提升为用户可见提示。
  *
- * 触发场景：records 内嵌图片/语音 base64 撑爆 ~5MB 配额时，
+ * 触发场景：records 内嵌图片/语音 base64 接近本应用 8MB 预算/实际浏览器配额时，
  * quotaSafeStorage 会剥离附件以保住结构化元数据。若用户不知情，
  * 会表现为「图片莫名消失」。这里显式告知丢失范围与恢复途径。
  */

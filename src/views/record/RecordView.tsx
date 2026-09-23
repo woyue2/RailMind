@@ -6,6 +6,7 @@ import { RecordSearch } from './RecordSearch';
 import { FloatingBubblePin } from '../../components/record/FloatingBubblePin';
 import { ThreadPickerModal } from '../../components/modals/ThreadPickerModal';
 import { TagPickerModal } from '../../components/modals/TagPickerModal';
+import { DeskPickerModal } from '../../components/modals/DeskPickerModal';
 import { SettingsModal } from '../../components/modals/SettingsModal';
 import { HomeLinkModal } from '../../components/modals/HomeLinkModal';
 import { getRelativeDayMeta, getLocalDateKey } from '../../utils/dateUtils';
@@ -57,7 +58,11 @@ export const RecordView = () => {
   const backToThreadDetail = useFlowStore((s) => s.backToThreadDetail);
   const resetToTodayRecord = useFlowStore((s) => s.resetToTodayRecord);
   const updateRecord = useFlowStore((s) => s.updateRecord);
+  const bindRecordToDesk = useFlowStore((s) => s.bindRecordToDesk);
+  const unbindRecordFromDesk = useFlowStore((s) => s.unbindRecordFromDesk);
   const restoreRecords = useFlowStore((s) => s.restoreRecords);
+  const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
+  const activeQuoteRecordId = useFlowStore((s) => s.activeQuoteRecordId);
   const homeLink = useFlowStore((s) => s.homeLink);
   const setHomeLink = useFlowStore((s) => s.setHomeLink);
 
@@ -90,6 +95,9 @@ export const RecordView = () => {
   const [tagModalOpen, setTagModalOpen] = useState(false);
   const [targetRecordForTag, setTargetRecordForTag] = useState<{ id: string; currentTagId: string | null } | null>(null);
 
+  const [deskModalOpen, setDeskModalOpen] = useState(false);
+  const [targetRecordForDesk, setTargetRecordForDesk] = useState<string | null>(null);
+
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [homeLinkModalOpen, setHomeLinkModalOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -97,6 +105,8 @@ export const RecordView = () => {
   const longPressTriggered = useRef(false);
   const undoDeleteTimerRef = useRef<number | null>(null);
   const [undoDeleteState, setUndoDeleteState] = useState<{ records: RecordItem[] } | null>(null);
+  const [savedTodayHint, setSavedTodayHint] = useState<string | null>(null);
+  const savedTodayHintTimerRef = useRef<number | null>(null);
 
   const handleRecordsDeleted = (deletedRecords: RecordItem[]) => {
     if (!deletedRecords.length) return;
@@ -122,6 +132,7 @@ export const RecordView = () => {
 
   useEffect(() => () => {
     if (undoDeleteTimerRef.current !== null) window.clearTimeout(undoDeleteTimerRef.current);
+    if (savedTodayHintTimerRef.current !== null) window.clearTimeout(savedTodayHintTimerRef.current);
   }, []);
   const r2Enabled = isR2Configured() && loadR2Settings().enabled;
 
@@ -232,6 +243,63 @@ export const RecordView = () => {
     setCustomPageDate(dateKey);
     visiblePageDateRef.current = dateKey;
     setVisiblePageDate(dateKey);
+  };
+
+  const showSavedTodayHint = (message: string) => {
+    setSavedTodayHint(message);
+    if (savedTodayHintTimerRef.current !== null) {
+      window.clearTimeout(savedTodayHintTimerRef.current);
+    }
+    savedTodayHintTimerRef.current = window.setTimeout(() => {
+      setSavedTodayHint(null);
+      savedTodayHintTimerRef.current = null;
+    }, 4000);
+  };
+
+  const goToToday = () => {
+    resetToTodayRecord();
+    if (recordViewMode === 'daily-pages') {
+      jumpToDate(todayDateKey);
+    } else {
+      revealElement(bottomAnchorRef.current, 'end');
+    }
+    setSavedTodayHint(null);
+    if (savedTodayHintTimerRef.current !== null) {
+      window.clearTimeout(savedTodayHintTimerRef.current);
+      savedTodayHintTimerRef.current = null;
+    }
+  };
+
+  const handleRecordCreated = (id: string) => {
+    if (isViewingHistoricalPage) {
+      const hasBranchContext = Boolean(activeBranchParentId || activeQuoteRecordId);
+      if (hasBranchContext) {
+        useFlowStore.getState().setHighlightRecordId(id);
+        window.setTimeout(() => {
+          const previewEl = document.querySelector<HTMLElement>(`[id^="record-preview-"][data-record-id="${id}"]`);
+          const targetEl = previewEl || document.getElementById(`record-${id}`);
+          if (targetEl && (previewEl || !isViewingHistoricalPage)) {
+            revealElement(targetEl);
+          }
+          window.setTimeout(() => {
+            if (useFlowStore.getState().highlightRecordId === id) useFlowStore.getState().setHighlightRecordId(null);
+          }, 1600);
+        }, 250);
+      }
+      showSavedTodayHint('已存到今天 · 回到今天');
+      return;
+    }
+
+    useFlowStore.getState().setSelectedDate(todayDateKey);
+    visiblePageDateRef.current = todayDateKey;
+    setVisiblePageDate(todayDateKey);
+    useFlowStore.getState().setHighlightRecordId(id);
+    window.setTimeout(() => {
+      revealElement(document.getElementById(`record-${id}`));
+      window.setTimeout(() => {
+        if (useFlowStore.getState().highlightRecordId === id) useFlowStore.getState().setHighlightRecordId(null);
+      }, 1600);
+    }, 300);
   };
 
   const handleSearchResult = (record: RecordItem) => {
@@ -387,6 +455,21 @@ export const RecordView = () => {
     }
   };
 
+  const handleOpenDeskPicker = (recordId: string) => {
+    setTargetRecordForDesk(recordId);
+    setDeskModalOpen(true);
+  };
+
+  const handleBindDesk = (recordId: string, drawerId: string) => {
+    bindRecordToDesk(recordId, drawerId);
+    setDeskModalOpen(false);
+  };
+
+  const handleUnbindDesk = (recordId: string) => {
+    unbindRecordFromDesk(recordId);
+    setDeskModalOpen(false);
+  };
+
   const currentPage = dayGroups[pageIndex];
   const previousPage = pageIndex > 0 ? dayGroups[pageIndex - 1] : null;
   const nextPage = pageIndex < dayGroups.length - 1 ? dayGroups[pageIndex + 1] : null;
@@ -414,6 +497,7 @@ export const RecordView = () => {
             displayDate={group.dateKey}
             onOpenThreadPicker={handleOpenThreadPicker}
             onOpenTagPicker={handleOpenTagPicker}
+            onOpenDeskPicker={handleOpenDeskPicker}
             onRecordsDeleted={handleRecordsDeleted}
           />
         </div>
@@ -781,7 +865,7 @@ export const RecordView = () => {
         <div
           role="status"
           aria-live="polite"
-          className="absolute left-4 bottom-24 z-40 flex max-w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-slate-200 bg-slate-900 px-3.5 py-2.5 text-xs text-white shadow-xl"
+          className="absolute left-4 bottom-36 z-40 flex max-w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-slate-200 bg-slate-900 px-3.5 py-2.5 text-xs text-white shadow-xl"
         >
           <span className="min-w-0 truncate">
             {undoDeleteState.records.length > 1 ? '已删除记录及其分支' : '已删除记录'}
@@ -796,19 +880,25 @@ export const RecordView = () => {
         </div>
       )}
 
+      {savedTodayHint && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute left-4 bottom-24 z-40 flex max-w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-slate-200 bg-slate-900 px-3.5 py-2.5 text-xs text-white shadow-xl"
+        >
+          <span className="min-w-0 truncate">{savedTodayHint}</span>
+          <button
+            type="button"
+            onClick={goToToday}
+            className="shrink-0 rounded-lg px-2.5 py-1 font-semibold text-amber-300 transition-colors hover:bg-white/10 hover:text-amber-200"
+          >
+            回到今天
+          </button>
+        </div>
+      )}
+
       {/* 3. Bottom Sticky Input Bar (Recent Thread Capsules + Input + Send) */}
-      <RecordInputBar writesToToday={isViewingHistoricalPage} onRecordCreated={(id) => {
-        useFlowStore.getState().setSelectedDate(todayDateKey);
-        visiblePageDateRef.current = todayDateKey;
-        setVisiblePageDate(todayDateKey);
-        useFlowStore.getState().setHighlightRecordId(id);
-        window.setTimeout(() => {
-          revealElement(document.getElementById(`record-${id}`));
-          window.setTimeout(() => {
-            if (useFlowStore.getState().highlightRecordId === id) useFlowStore.getState().setHighlightRecordId(null);
-          }, 1600);
-        }, 300);
-      }} />
+      <RecordInputBar writesToToday={isViewingHistoricalPage} onRecordCreated={handleRecordCreated} />
 
       {/* Modals */}
       <ThreadPickerModal
@@ -823,6 +913,14 @@ export const RecordView = () => {
         onClose={() => setTagModalOpen(false)}
         currentTagId={targetRecordForTag?.currentTagId ?? null}
         onSelectTag={handleSelectTag}
+      />
+
+      <DeskPickerModal
+        isOpen={deskModalOpen}
+        onClose={() => setDeskModalOpen(false)}
+        recordId={targetRecordForDesk}
+        onBind={handleBindDesk}
+        onUnbind={handleUnbindDesk}
       />
 
       <SettingsModal

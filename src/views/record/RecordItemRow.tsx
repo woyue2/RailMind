@@ -40,6 +40,7 @@ interface RecordItemRowProps {
   previewPath?: string;
   onOpenThreadPicker: (recordId: string, currentText: string) => void;
   onOpenTagPicker: (recordId: string, currentTagId: string | null) => void;
+  onOpenDeskPicker?: (recordId: string) => void;
   onRecordsDeleted?: (records: RecordItem[]) => void;
 }
 
@@ -51,6 +52,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   previewPath,
   onOpenThreadPicker,
   onOpenTagPicker,
+  onOpenDeskPicker,
   onRecordsDeleted,
 }) => {
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
@@ -123,7 +125,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   const isBranchingThis = activeBranchParentId === item.id;
   const isQuotingThis = activeQuoteRecordId === item.id;
-  const isHighlighted = !previewPath && highlightRecordId === item.id;
+  const isHighlighted = highlightRecordId === item.id;
   const hasChildren = item.children && item.children.length > 0;
   const activeQuickThread = quickSelectedThreadId
     ? threads.find((t) => t.id === quickSelectedThreadId)
@@ -251,7 +253,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   const displayId = previewPath ? `record-preview-${previewPath}` : `record-${item.id}`;
   if (previewPath && !isExpanded) {
     return (
-      <button type="button" id={displayId} aria-expanded={false}
+      <button type="button" id={displayId} data-record-id={item.id} aria-expanded={false}
         onClick={() => setIsExpanded(true)}
         className="block w-full min-w-0 text-left rounded-lg border border-amber-100 bg-amber-50/40 px-2.5 py-2 hover:bg-amber-50">
         <span className="flex items-center gap-1 text-[11px] text-amber-700">
@@ -268,7 +270,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   }
 
   return (
-    <div className="relative min-w-0" id={displayId}>
+    <div className="relative min-w-0" id={displayId} data-record-id={item.id}>
       {previewPath && <button type="button" aria-expanded={true}
         onClick={() => setIsExpanded(false)}
         className="flex w-full items-center gap-1 px-2.5 py-1 text-[11px] text-amber-700">
@@ -634,6 +636,28 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 >
                   +打标签
                 </button>
+              )}
+
+              {/* 🪑 桌邊來源徽章：若記錄來自桌邊抽屜 */}
+              {item.desk_entry_id ? (
+                <button
+                  onClick={() => onOpenDeskPicker?.(item.id)}
+                  className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[11px] font-medium rounded-full text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                  title="來自桌邊抽屜，點擊查看或移動"
+                >
+                  <span>🪑</span>
+                  <span>桌邊</span>
+                </button>
+              ) : (
+                onOpenDeskPicker && (
+                  <button
+                    onClick={() => onOpenDeskPicker(item.id)}
+                    className="pointer-fine:opacity-0 group-hover:opacity-100 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] text-gray-400 hover:text-emerald-700 rounded border border-dashed border-gray-200 hover:border-emerald-300 transition-all cursor-pointer"
+                    title="收進桌邊抽屜"
+                  >
+                    🪑 收進桌邊
+                  </button>
+                )
               )}
 
               {/* 💬 Downstream References Badge */}
