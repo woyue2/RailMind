@@ -29,3 +29,8 @@ android/.gradle/
 android/build/
 *.tsbuildinfo
 
+
+# Trae / IDE cache
+.build-cache/
+.trae/
+.workbuddy/
