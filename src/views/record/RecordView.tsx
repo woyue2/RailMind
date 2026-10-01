@@ -12,7 +12,7 @@ import { HomeLinkModal } from '../../components/modals/HomeLinkModal';
 import { getRelativeDayMeta, getLocalDateKey } from '../../utils/dateUtils';
 import { buildRecordBranches } from '../../utils/recordBranches';
 import { revealElement } from '../../utils/scrollUtils';
-import { EnrichedRecordItem, RecordItem } from '../../types';
+import { EnrichedRecordItem, RecordItem, DeskDrawer } from '../../types';
 import {
   Calendar,
   RotateCcw,
@@ -61,11 +61,36 @@ export const RecordView = () => {
   const bindRecordToDesk = useFlowStore((s) => s.bindRecordToDesk);
   const unbindRecordFromDesk = useFlowStore((s) => s.unbindRecordFromDesk);
   const createDrawerFromRecord = useFlowStore((s) => s.createDrawerFromRecord);
+  const deskRows = useFlowStore((s) => s.deskRows);
   const restoreRecords = useFlowStore((s) => s.restoreRecords);
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
   const activeQuoteRecordId = useFlowStore((s) => s.activeQuoteRecordId);
   const homeLink = useFlowStore((s) => s.homeLink);
   const setHomeLink = useFlowStore((s) => s.setHomeLink);
+
+  // 1. 按日期聚合桌邊抽屜：dateKey -> DeskDrawer[]
+  const drawersByDate = useMemo(() => {
+    const map = new Map<string, DeskDrawer[]>();
+    deskRows.forEach((row) => {
+      const dateKey = getLocalDateKey(row.created_at);
+      const existing = map.get(dateKey) || [];
+      map.set(dateKey, [...existing, ...row.drawers]);
+    });
+    return map;
+  }, [deskRows]);
+
+  // 2. 建立 entryId -> drawerTitle 的快速映射表
+  const entryDrawerTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    deskRows.forEach((row) => {
+      row.drawers.forEach((drawer) => {
+        drawer.entries.forEach((entry) => {
+          map.set(entry.id, drawer.title);
+        });
+      });
+    });
+    return map;
+  }, [deskRows]);
 
   const parentThread = fromThreadDetailId
     ? threads.find((t) => t.id === fromThreadDetailId)
@@ -220,6 +245,7 @@ export const RecordView = () => {
     monthAgoDateKey,
     selectedDate,
     customPageDate,
+    deskRows,
   ]);
 
   useEffect(() => {
@@ -492,6 +518,60 @@ export const RecordView = () => {
   const isViewingHistoricalPage =
     recordViewMode === 'daily-pages' && visiblePageDate !== todayDateKey;
 
+  const renderDayDrawers = (dateKey: string) => {
+    const dayDrawers = drawersByDate.get(dateKey) || [];
+    if (dayDrawers.length === 0) return null;
+
+    return (
+      <div className="mb-3 mx-1 p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 shadow-2xs">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-900">
+            <Rows3 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>桌邊抽屜 ({dayDrawers.length})</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('desk')}
+            className="text-[11px] font-medium text-emerald-700 hover:text-emerald-900 flex items-center gap-0.5 transition-colors cursor-pointer"
+            title="前往桌邊看板檢視與編輯抽屜"
+          >
+            <span>打開桌邊看板</span>
+            <ChevronRight className="w-3 h-3" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {dayDrawers.map((drawer) => (
+            <div
+              key={drawer.id}
+              onClick={() => setActiveTab('desk')}
+              className="bg-white rounded-lg p-2.5 border border-emerald-100/90 shadow-2xs flex flex-col gap-1 hover:border-emerald-300 hover:shadow-xs transition-all cursor-pointer group"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-xs font-bold text-gray-800 truncate flex items-center gap-1 group-hover:text-emerald-800 transition-colors">
+                  <span>🗄️</span>
+                  <span className="truncate">{drawer.title}</span>
+                </span>
+                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.2 rounded-full shrink-0">
+                  {drawer.entries.length} 條
+                </span>
+              </div>
+              {drawer.entries.length === 0 ? (
+                <div className="text-[11px] text-gray-400 italic py-0.5">
+                  空抽屜 · 點擊切換至桌邊新增內容
+                </div>
+              ) : (
+                <div className="text-[11px] text-gray-600 line-clamp-2 bg-gray-50/80 px-2 py-1 rounded">
+                  {drawer.entries.map((e) => e.text).join(' · ')}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const renderRecordTree = (group: DayGroup) => (
     <div className="space-y-0.5 pl-1">
       {group.roots.map((item) => (
@@ -504,6 +584,7 @@ export const RecordView = () => {
             onOpenTagPicker={handleOpenTagPicker}
             onOpenDeskPicker={handleOpenDeskPicker}
             onCreateDrawerFromRecord={handleCreateDrawerFromRecord}
+            deskDrawerTitle={item.desk_entry_id ? entryDrawerTitleMap.get(item.desk_entry_id) : undefined}
             onRecordsDeleted={handleRecordsDeleted}
           />
         </div>
@@ -774,6 +855,7 @@ export const RecordView = () => {
                   )}
                 </div>
 
+                {renderDayDrawers(group.dateKey)}
                 {renderRecordTree(group)}
               </div>
             );
@@ -813,8 +895,14 @@ export const RecordView = () => {
                   )}
                 </div>
 
+                {renderDayDrawers(group.dateKey)}
+
                 {group.roots.length > 0 ? (
                   renderRecordTree(group)
+                ) : (drawersByDate.get(group.dateKey)?.length ?? 0) > 0 ? (
+                  <div className="text-center py-6 text-xs text-gray-400">
+                    該日期已建立桌邊抽屜，可繼續在下方輸入記錄追加時間流。
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center px-6 py-20 text-center text-gray-400">
                     <Calendar className="mb-3 h-8 w-8 text-gray-300" />

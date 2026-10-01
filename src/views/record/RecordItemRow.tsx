@@ -42,6 +42,7 @@ interface RecordItemRowProps {
   onOpenTagPicker: (recordId: string, currentTagId: string | null) => void;
   onOpenDeskPicker?: (recordId: string) => void;
   onCreateDrawerFromRecord?: (recordId: string) => void;
+  deskDrawerTitle?: string;
   onRecordsDeleted?: (records: RecordItem[]) => void;
 }
 
@@ -55,6 +56,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   onOpenTagPicker,
   onOpenDeskPicker,
   onCreateDrawerFromRecord,
+  deskDrawerTitle,
   onRecordsDeleted,
 }) => {
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
@@ -643,11 +645,11 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
               {item.desk_entry_id ? (
                 <button
                   onClick={() => onOpenDeskPicker?.(item.id)}
-                  className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[11px] font-medium rounded-full text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
-                  title="來自桌邊抽屜，點擊查看或移動"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                  title={`來自桌邊抽屜「${deskDrawerTitle || '桌邊'}」，點擊查看或移動`}
                 >
                   <span>🪑</span>
-                  <span>桌邊</span>
+                  <span className="truncate max-w-[130px] font-semibold">{deskDrawerTitle ? `抽屜: ${deskDrawerTitle}` : '桌邊'}</span>
                 </button>
               ) : (
                 onOpenDeskPicker && (
