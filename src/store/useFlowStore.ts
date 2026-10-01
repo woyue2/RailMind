@@ -518,23 +518,69 @@ export const useFlowStore = create<FlowState>()(
         const removedRecords = records.filter((record) => removedIds.has(record.id));
         if (!removedRecords.length) return [];
 
-        // 級聯：若被刪的 records 有 desk_entry_id → 從桌邊移除對應 entries（解綁）
+        // 級聯：若被刪的 records 有 desk_entry_id 或與抽屜直接關聯 → 移除 entries，且若抽屜被清空則一併刪除抽屜！
         const removedEntryIds = new Set<string>();
+        const removedRecordIds = new Set<string>(removedRecords.map((r) => r.id));
+        const removedRecordTexts = new Set<string>(
+          removedRecords.map((r) => r.text.trim().split('\n')[0]).filter(Boolean)
+        );
+
         removedRecords.forEach((r) => {
           if (r.desk_entry_id) removedEntryIds.add(r.desk_entry_id);
         });
 
+        const affectedRowIds = new Set<string>();
+
         set((state) => {
           let deskRows = state.deskRows;
-          if (removedEntryIds.size > 0) {
+          const nowIso = new Date().toISOString();
+          const drawersToDelete = new Set<string>();
+
+          state.deskRows.forEach((row) => {
+            row.drawers.forEach((drawer) => {
+              const remainingEntries = drawer.entries.filter((e) => !removedEntryIds.has(e.id));
+              // 條件 1: 抽屜內有條目被刪，且過濾後該抽屜無任何剩餘條目 → 刪除該抽屜
+              if (drawer.entries.some((e) => removedEntryIds.has(e.id)) && remainingEntries.length === 0) {
+                drawersToDelete.add(drawer.id);
+                affectedRowIds.add(row.id);
+              }
+              // 條件 2: 抽屜的所有條目對應的 record 都全在被刪除的列表中 → 刪除該抽屜
+              else if (
+                drawer.entries.length > 0 &&
+                drawer.entries.every((e) => e.record_id && removedRecordIds.has(e.record_id))
+              ) {
+                drawersToDelete.add(drawer.id);
+                affectedRowIds.add(row.id);
+              }
+              // 條件 3: 抽屜標題恰好是被刪記錄文本（由做成抽屜生成）且無其他非關聯條目 → 刪除該抽屜
+              else if (
+                removedRecordTexts.has(drawer.title.trim()) &&
+                remainingEntries.length === 0
+              ) {
+                drawersToDelete.add(drawer.id);
+                affectedRowIds.add(row.id);
+              } else if (drawer.entries.some((e) => removedEntryIds.has(e.id))) {
+                affectedRowIds.add(row.id);
+              }
+            });
+          });
+
+          if (removedEntryIds.size > 0 || drawersToDelete.size > 0) {
             deskRows = state.deskRows.map((row) => ({
               ...row,
-              drawers: row.drawers.map((d) => ({
-                ...d,
-                entries: d.entries.filter((e) => !removedEntryIds.has(e.id)),
-              })),
+              drawers: row.drawers
+                // 1. 刪除關聯抽屜
+                .filter((d) => !drawersToDelete.has(d.id))
+                // 2. 剩餘抽屜移除被刪 entry
+                .map((d) => ({
+                  ...d,
+                  entries: d.entries.filter((e) => !removedEntryIds.has(e.id)),
+                  updated_at: nowIso,
+                })),
+              updated_at: nowIso,
             }));
           }
+
           return {
             records: state.records.filter((record) => !removedIds.has(record.id)),
             deskRows,
@@ -542,15 +588,7 @@ export const useFlowStore = create<FlowState>()(
         });
 
         // 同步受影響的桌邊 rows
-        if (removedEntryIds.size > 0) {
-          const affectedRowIds = new Set<string>();
-          get().deskRows.forEach((row) => {
-            if (row.drawers.some((d) => d.entries.some((e) => removedEntryIds.has(e.id)))) {
-              affectedRowIds.add(row.id);
-            }
-          });
-          affectedRowIds.forEach((rowId) => triggerDeskRowSync(rowId));
-        }
+        affectedRowIds.forEach((rowId) => triggerDeskRowSync(rowId));
 
         removedRecords.forEach((record) => triggerAutoSync((sync) => sync?.deleteRecord(record.id)));
         return removedRecords;
