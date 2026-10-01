@@ -41,6 +41,7 @@ interface RecordItemRowProps {
   onOpenThreadPicker: (recordId: string, currentText: string) => void;
   onOpenTagPicker: (recordId: string, currentTagId: string | null) => void;
   onOpenDeskPicker?: (recordId: string) => void;
+  onCreateDrawerFromRecord?: (recordId: string) => void;
   onRecordsDeleted?: (records: RecordItem[]) => void;
 }
 
@@ -53,6 +54,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   onOpenThreadPicker,
   onOpenTagPicker,
   onOpenDeskPicker,
+  onCreateDrawerFromRecord,
   onRecordsDeleted,
 }) => {
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
@@ -650,13 +652,24 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 </button>
               ) : (
                 onOpenDeskPicker && (
-                  <button
-                    onClick={() => onOpenDeskPicker(item.id)}
-                    className="pointer-fine:opacity-0 group-hover:opacity-100 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] text-gray-400 hover:text-emerald-700 rounded border border-dashed border-gray-200 hover:border-emerald-300 transition-all cursor-pointer"
-                    title="收進桌邊抽屜"
-                  >
-                    🪑 收進桌邊
-                  </button>
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      onClick={() => onOpenDeskPicker(item.id)}
+                      className="pointer-fine:opacity-0 group-hover:opacity-100 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] text-gray-400 hover:text-emerald-700 rounded border border-dashed border-gray-200 hover:border-emerald-300 transition-all cursor-pointer"
+                      title="收進現有桌邊抽屜"
+                    >
+                      🪑 收進桌邊
+                    </button>
+                    {onCreateDrawerFromRecord && (
+                      <button
+                        onClick={() => onCreateDrawerFromRecord(item.id)}
+                        className="pointer-fine:opacity-0 group-hover:opacity-100 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] text-emerald-600 hover:text-emerald-800 rounded border border-dashed border-emerald-200 hover:border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50 transition-all cursor-pointer"
+                        title="以此記錄直接創建為獨立抽屜"
+                      >
+                        🗄️ 做成抽屜
+                      </button>
+                    )}
+                  </div>
                 )
               )}
 

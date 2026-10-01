@@ -60,6 +60,7 @@ export const RecordView = () => {
   const updateRecord = useFlowStore((s) => s.updateRecord);
   const bindRecordToDesk = useFlowStore((s) => s.bindRecordToDesk);
   const unbindRecordFromDesk = useFlowStore((s) => s.unbindRecordFromDesk);
+  const createDrawerFromRecord = useFlowStore((s) => s.createDrawerFromRecord);
   const restoreRecords = useFlowStore((s) => s.restoreRecords);
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
   const activeQuoteRecordId = useFlowStore((s) => s.activeQuoteRecordId);
@@ -470,6 +471,10 @@ export const RecordView = () => {
     setDeskModalOpen(false);
   };
 
+  const handleCreateDrawerFromRecord = (recordId: string) => {
+    createDrawerFromRecord(recordId);
+  };
+
   const currentPage = dayGroups[pageIndex];
   const previousPage = pageIndex > 0 ? dayGroups[pageIndex - 1] : null;
   const nextPage = pageIndex < dayGroups.length - 1 ? dayGroups[pageIndex + 1] : null;
@@ -498,6 +503,7 @@ export const RecordView = () => {
             onOpenThreadPicker={handleOpenThreadPicker}
             onOpenTagPicker={handleOpenTagPicker}
             onOpenDeskPicker={handleOpenDeskPicker}
+            onCreateDrawerFromRecord={handleCreateDrawerFromRecord}
             onRecordsDeleted={handleRecordsDeleted}
           />
         </div>
@@ -921,6 +927,7 @@ export const RecordView = () => {
         recordId={targetRecordForDesk}
         onBind={handleBindDesk}
         onUnbind={handleUnbindDesk}
+        onCreateDrawer={handleCreateDrawerFromRecord}
       />
 
       <SettingsModal

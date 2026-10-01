@@ -10,6 +10,7 @@ interface DeskPickerModalProps {
   recordId: string | null;
   onBind: (recordId: string, drawerId: string) => void;
   onUnbind?: (recordId: string) => void;
+  onCreateDrawer?: (recordId: string) => void;
 }
 
 /** Row 就是日期容器，日期由 row.created_at 決定，與 store/DeskEdgeView 統一。 */
@@ -29,6 +30,7 @@ export function DeskPickerModal({
   recordId,
   onBind,
   onUnbind,
+  onCreateDrawer,
 }: DeskPickerModalProps) {
   const rows = useFlowStore((s) => s.deskRows);
   const records = useFlowStore((s) => s.records);
@@ -116,6 +118,28 @@ export function DeskPickerModal({
             >
               <span>已在桌邊，點此解綁（保留時間流記錄）</span>
               <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Create new drawer from record option */}
+        {recordId && onCreateDrawer && (
+          <div className="px-5 py-2.5 border-b border-gray-100 bg-emerald-50/30">
+            <button
+              type="button"
+              onClick={() => {
+                onCreateDrawer(recordId);
+                onClose();
+              }}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/80 hover:bg-emerald-100/90 text-emerald-800 text-xs font-medium transition-all group cursor-pointer shadow-xs"
+            >
+              <div className="flex items-center gap-2 truncate">
+                <span className="text-sm">🗄️</span>
+                <span className="truncate font-semibold">以此記錄直接「新建為獨立抽屜」</span>
+              </div>
+              <span className="shrink-0 text-[11px] font-semibold text-emerald-700 group-hover:text-emerald-900 bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shadow-2xs">
+                + 做成抽屜
+              </span>
             </button>
           </div>
         )}

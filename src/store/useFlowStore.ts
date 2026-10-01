@@ -210,6 +210,8 @@ interface FlowState {
   bindRecordToDesk: (recordId: string, drawerId: string) => DeskEntry | null;
   /** 解綁：record 清 desk_entry_id，對應的桌邊 entry 一併刪除。 */
   unbindRecordFromDesk: (recordId: string) => void;
+  /** 主時間流記錄直接作為新抽屜：以該記錄文本為標題，在該記錄日期對應的 row 建立新抽屜，並將記錄綁定進抽屜 */
+  createDrawerFromRecord: (recordId: string, customTitle?: string) => DeskDrawer | null;
 }
 
 interface ThreadDetailReturnContext {
@@ -1586,6 +1588,64 @@ export const useFlowStore = create<FlowState>()(
         if (ownerRow) triggerDeskRowSync(ownerRow.id);
         const finalRecord = get().records.find((r) => r.id === recordId);
         if (finalRecord) triggerAutoSync((sync) => sync?.pushRecord(finalRecord));
+      },
+
+      createDrawerFromRecord: (recordId, customTitle) => {
+        const record = get().records.find((r) => r.id === recordId);
+        if (!record) return null;
+
+        // 若已綁定舊抽屜，先解綁
+        if (record.desk_entry_id) {
+          get().unbindRecordFromDesk(record.id);
+        }
+
+        const nowIso = new Date().toISOString();
+        const dateKey = getLocalDateKey(record.created_at);
+        const row = get().ensureDeskRowForDate(dateKey);
+
+        const firstLine = record.text.trim().split('\n')[0] || '新抽屜';
+        const title = customTitle?.trim() || (firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : firstLine);
+
+        const newDrawerId = generateId();
+        const newEntryId = generateId();
+
+        const newEntry: DeskEntry = {
+          id: newEntryId,
+          text: record.text,
+          created_at: record.created_at,
+          updated_at: nowIso,
+          record_id: record.id,
+        };
+
+        const newDrawer: DeskDrawer = {
+          id: newDrawerId,
+          title,
+          entries: [newEntry],
+          created_at: record.created_at,
+          updated_at: nowIso,
+        };
+
+        set((state) => ({
+          records: state.records.map((r) =>
+            r.id === record.id ? { ...r, desk_entry_id: newEntryId, updated_at: nowIso } : r
+          ),
+          deskRows: state.deskRows.map((r) =>
+            r.id === row.id
+              ? {
+                  ...r,
+                  drawers: [...r.drawers, newDrawer],
+                  updated_at: nowIso,
+                }
+              : r
+          ),
+        }));
+
+        const finalRecord = get().records.find((r) => r.id === record.id);
+        if (finalRecord) triggerAutoSync((sync) => sync?.pushRecord(finalRecord));
+        triggerDeskRowSync(row.id);
+
+        get().toggleDeskDrawer(newDrawerId, true);
+        return newDrawer;
       },
     }),
     {
