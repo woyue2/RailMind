@@ -220,13 +220,21 @@ export function DeskEdgeView() {
   const handleAddDrawerToToday = () => {
     const row = ensureDeskRowForDate(todayKey);
     const drawer = addDeskDrawer(row.id);
-    if (drawer) toggleDeskDrawer(drawer.id, true);
+    if (drawer) {
+      toggleDeskDrawer(drawer.id, true);
+      setEditingDrawerId(drawer.id);
+      setDrawerDraft(drawer.title);
+    }
   };
 
   const handleAddDrawerToSection = (section: DaySection) => {
     const row = ensureDeskRowForDate(section.dateKey);
     const drawer = addDeskDrawer(row.id);
-    if (drawer) toggleDeskDrawer(drawer.id, true);
+    if (drawer) {
+      toggleDeskDrawer(drawer.id, true);
+      setEditingDrawerId(drawer.id);
+      setDrawerDraft(drawer.title);
+    }
   };
 
   const handleSectionTitleClick = (section: DaySection) => {
@@ -530,10 +538,11 @@ export function DeskEdgeView() {
                               setEditingDrawerId(drawer.id);
                               setDrawerDraft(drawer.title);
                             }}
-                            className="group flex min-w-0 flex-1 items-center gap-1 text-left"
-                            title="編輯抽屜名稱"
+                            className="group flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                            title="點擊修改抽屜主題名稱"
                           >
-                            <span className={`truncate text-sm font-semibold ${allDone ? 'text-slate-500' : 'text-emerald-900'}`}>{drawer.title}</span>
+                            <span className="shrink-0 text-[10px] font-medium bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">主題/Thread</span>
+                            <span className={`truncate text-sm font-bold ${allDone ? 'text-slate-500' : 'text-emerald-950'}`}>{drawer.title}</span>
                             <Pencil className={`h-3.5 w-3.5 shrink-0 ${allDone ? 'text-slate-300 group-hover:text-slate-500' : 'text-emerald-300 group-hover:text-emerald-600'}`} />
                           </button>
                         )}
@@ -691,7 +700,7 @@ export function DeskEdgeView() {
                               onChange={(e) =>
                                 setDrawerDrafts((prev) => ({ ...prev, [drawer.id]: e.target.value }))
                               }
-                              placeholder="繼續在這個抽屜新增文字..."
+                              placeholder={`向「${drawer.title}」主題新增獨立詞條筆記（同步至時間流）...`}
                               rows={2}
                               className="min-h-12 flex-1 resize-none rounded-lg border border-emerald-200 bg-white/90 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-emerald-400 focus:outline-none"
                             />

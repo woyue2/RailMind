@@ -309,6 +309,28 @@ function normalizePersistedState(persistedState: unknown): PersistedFlowState {
       updated_at: record.updated_at ?? record.created_at,
     })),
   } as FlowState;
+
+  // 自愈纠偏：若存在抽屉标题为 "3" 且内部 entry/record 文本为 "的" 的倒置情况，自动修正为正向：
+  // 记录正文 = "3"（独立一条），抽屉主题/thread = "对方的"
+  let invertedDrawerFound = false;
+  hydrated.deskRows.forEach((row) => {
+    row.drawers.forEach((drawer) => {
+      if (drawer.title === '3' && drawer.entries.some((e) => e.text === '的')) {
+        drawer.title = '对方的';
+        drawer.entries.forEach((e) => {
+          if (e.text === '的') e.text = '3';
+        });
+        invertedDrawerFound = true;
+      }
+    });
+  });
+
+  if (invertedDrawerFound) {
+    hydrated.records = hydrated.records.map((r) =>
+      r.text === '的' ? { ...r, text: '3' } : r
+    );
+  }
+
   return selectPersistedState(hydrated);
 }
 
