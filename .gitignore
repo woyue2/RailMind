@@ -34,3 +34,6 @@ android/build/
 .build-cache/
 .trae/
 .workbuddy/
+
+# Local dev data bridge
+.local-data-sync.json

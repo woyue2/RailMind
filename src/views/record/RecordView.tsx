@@ -613,7 +613,7 @@ export const RecordView = () => {
             title="打開桌邊抽屜"
           >
             <Rows3 className="h-3.5 w-3.5 text-emerald-600" />
-            <span className="hidden font-medium sm:inline">桌邊</span>
+            <span className="font-medium text-emerald-700">桌邊</span>
           </button>
         </div>
       </div>
@@ -936,3 +936,4 @@ export const RecordView = () => {
     </div>
   );
 };
+
