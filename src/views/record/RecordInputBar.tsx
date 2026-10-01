@@ -142,17 +142,17 @@ export const RecordInputBar: React.FC<RecordInputBarProps> = ({ writesToToday = 
 
   // Handle image file selection
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) {
+    const fileList = e.target.files ? Array.from(e.target.files) : [];
+    if (!fileList || fileList.length === 0) {
       // Android WebView 下 display:none 文件框选择后可能返回空，此时仍给出反馈
       showImageTip('未读取到所选图片，请重试', 'warning');
       return;
     }
 
     setIsProcessingImg(true);
-    setImgTip({ message: `正在处理 ${files.length} 张图片…`, tone: 'info' });
+    setImgTip({ message: `正在处理 ${fileList.length} 张图片…`, tone: 'info' });
     try {
-      const { compressed, error } = await processImageFiles(files, pendingImgs.length);
+      const { compressed, error } = await processImageFiles(fileList, pendingImgs.length);
       if (compressed.length > 0) {
         setPendingImgs((prev) => [...prev, ...compressed].slice(0, MAX_NOTE_IMAGES));
         showImageTip(

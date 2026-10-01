@@ -221,19 +221,17 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Append images to the existing record (compress then merge into imgs)
   const handleAddImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    e.target.value = ''; // 允许再次选择同一文件
-    if (!files || files.length === 0) {
-      // Android WebView 下 display:none 文件框选择后可能返回空，此时仍给出反馈
+    const fileList = e.target.files ? Array.from(e.target.files) : [];
+    if (!fileList || fileList.length === 0) {
       showImageTip('未读取到所选图片，请重试', 'warning');
       return;
     }
 
     setIsProcessingImg(true);
-    setImgTip({ message: `正在处理 ${files.length} 张图片…`, tone: 'info' });
+    setImgTip({ message: `正在处理 ${fileList.length} 张图片…`, tone: 'info' });
     try {
       const current = item.imgs?.length ?? 0;
-      const { compressed, error } = await processImageFiles(files, current);
+      const { compressed, error } = await processImageFiles(fileList, current);
       if (compressed.length > 0) {
         const merged = [...(item.imgs ?? []), ...compressed].slice(0, MAX_NOTE_IMAGES);
         updateRecord(item.id, { imgs: merged });
@@ -249,6 +247,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
       showImageTip('图片处理失败，请重试', 'warning');
     } finally {
       setIsProcessingImg(false);
+      if (imgInputRef.current) imgInputRef.current.value = '';
     }
   };
 
