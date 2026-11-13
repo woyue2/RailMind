@@ -2,26 +2,17 @@ import type { RecordTreeNode, TagItem } from '../types';
 
 export const UNTAGGED_SECTION_KEY = 'untagged';
 
-export interface TagDayGroup {
-  dateKey: string;
-  count: number;
-  roots: RecordTreeNode[];
-}
-
-/**
- * 一個標籤一節；同一頁內縱向列出所有標籤（A-Z，未打標籤最後），
- * 標籤內再按日期分組。頂部 chips 作為錨點滾動跳轉。
- */
-export interface TagSection {
+/** 某一天頁面內的一個標籤分節；只包含當天有記錄的標籤。 */
+export interface TagDaySection {
   tagKey: string;
   tagLabel: string;
   color: string | null;
   isUntagged: boolean;
   count: number;
-  days: TagDayGroup[];
+  roots: RecordTreeNode[];
 }
 
-/** 記錄歸屬的標籤節；標籤已刪除時視同未打標籤。 */
+/** 記錄歸屬的標籤分節；標籤已刪除時視同未打標籤。 */
 export function tagSectionKeyOf(
   record: { tag_id: string | null },
   validTagIds: Set<string>
@@ -39,15 +30,18 @@ function byCreatedAt(a: RecordTreeNode, b: RecordTreeNode): number {
 }
 
 /**
- * 標籤按名稱 A-Z（中文用拼音）排序、未打標籤最後；
- * 沒有記錄的標籤也保留一節（沒有日期小節），避免使用者以為標籤消失。
+ * 把某一天的記錄按標籤分節：標籤按名稱 A-Z（中文拼音）、未打標籤最後；
+ * 只保留當天有記錄的標籤。分節內的 roots 是「父記錄不在同標籤同一天」的節點，
+ * 與日期翻頁的跨日預覽規則一致。
  */
-export function buildTagSections(
+export function buildDateTagSections(
+  dayRecords: RecordTreeNode[],
   nodes: Map<string, RecordTreeNode>,
   tags: TagItem[],
+  dateKey: string,
   dateKeyOf: (record: { created_at: string }) => string
-): TagSection[] {
-  if (!tags.length && nodes.size === 0) return [];
+): TagDaySection[] {
+  if (!dayRecords.length) return [];
 
   const sortedTags = [...tags].sort(
     (a, b) => a.name.localeCompare(b.name, 'zh-Hans') || a.id.localeCompare(b.id)
@@ -57,11 +51,11 @@ export function buildTagSections(
     tagSectionKeyOf(record, validTagIds);
 
   const recordsBySection = new Map<string, RecordTreeNode[]>();
-  for (const node of nodes.values()) {
-    const key = sectionKeyFor(node);
+  for (const record of dayRecords) {
+    const key = sectionKeyFor(record);
     const list = recordsBySection.get(key);
-    if (list) list.push(node);
-    else recordsBySection.set(key, [node]);
+    if (list) list.push(record);
+    else recordsBySection.set(key, [record]);
   }
 
   const makeSection = (
@@ -69,43 +63,28 @@ export function buildTagSections(
     tagLabel: string,
     color: string | null,
     isUntagged: boolean
-  ): TagSection => {
+  ): TagDaySection => {
     const sectionRecords = recordsBySection.get(tagKey) ?? [];
-    const byDate = new Map<string, RecordTreeNode[]>();
-    for (const record of sectionRecords) {
-      const dateKey = dateKeyOf(record);
-      const list = byDate.get(dateKey);
-      if (list) list.push(record);
-      else byDate.set(dateKey, [record]);
-    }
-
     return {
       tagKey,
       tagLabel,
       color,
       isUntagged,
       count: sectionRecords.length,
-      days: [...byDate.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([dateKey, dateRecords]) => ({
-          dateKey,
-          count: dateRecords.length,
-          roots: dateRecords
-            .filter((node) => {
-              const parent = node.parent_id ? nodes.get(node.parent_id) : undefined;
-              if (!parent) return true;
-              return sectionKeyFor(parent) !== tagKey || dateKeyOf(parent) !== dateKey;
-            })
-            .sort(byCreatedAt),
-        })),
+      roots: sectionRecords
+        .filter((node) => {
+          const parent = node.parent_id ? nodes.get(node.parent_id) : undefined;
+          if (!parent) return true;
+          return sectionKeyFor(parent) !== tagKey || dateKeyOf(parent) !== dateKey;
+        })
+        .sort(byCreatedAt),
     };
   };
 
-  const sections = sortedTags.map((tag) =>
-    makeSection(`tag:${tag.id}`, tag.name, tag.color ?? null, false)
-  );
-  const untaggedRecords = recordsBySection.get(UNTAGGED_SECTION_KEY) ?? [];
-  if (untaggedRecords.length > 0) {
+  const sections = sortedTags
+    .filter((tag) => (recordsBySection.get(`tag:${tag.id}`)?.length ?? 0) > 0)
+    .map((tag) => makeSection(`tag:${tag.id}`, tag.name, tag.color ?? null, false));
+  if ((recordsBySection.get(UNTAGGED_SECTION_KEY)?.length ?? 0) > 0) {
     sections.push(makeSection(UNTAGGED_SECTION_KEY, '未打標籤', null, true));
   }
   return sections;
