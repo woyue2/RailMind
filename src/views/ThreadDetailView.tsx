@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Sparkles, ExternalLink } from 'lucide-react';
 import { useFlowStore } from '../store/useFlowStore';
-import { formatSimpleDate, formatTime, calculateDaysBetween } from '../utils/dateUtils';
-import { parseISO, differenceInDays, format } from 'date-fns';
+import { formatSimpleDate, formatTime, calculateDaysBetween, getLocalDateKey } from '../utils/dateUtils';
 import { ImageViewerModal } from '../components/modals/ImageViewerModal';
 import { AudioPlayerPill } from '../components/common/AudioPlayerPill';
 
@@ -34,9 +33,7 @@ export const ThreadDetailView: React.FC = () => {
   // Calculate total span in days
   const spanDays = useMemo(() => {
     if (records.length <= 1) return 1;
-    const firstDate = parseISO(records[0].created_at);
-    const lastDate = parseISO(records[records.length - 1].created_at);
-    const diff = Math.abs(differenceInDays(lastDate, firstDate));
+    const diff = calculateDaysBetween(records[0].created_at, records[records.length - 1].created_at);
     return diff === 0 ? 1 : diff;
   }, [records]);
 
@@ -56,7 +53,8 @@ export const ThreadDetailView: React.FC = () => {
 
   const handleJumpToDateRecord = (isoDate: string) => {
     try {
-      const dateKey = format(parseISO(isoDate), 'yyyy-MM-dd');
+      const dateKey = getLocalDateKey(isoDate);
+      if (!dateKey) return;
       openDateRecordFromThread(dateKey, thread.id);
     } catch {
       // ignore

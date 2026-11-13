@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
-import { BookOpen, GitFork, PenTool, LayoutGrid, Gem, Rows3 } from 'lucide-react';
+import { BookOpen, PenTool, Rows3 } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import { RecordView } from '../../views/record/RecordView';
 import { ReviewView } from '../../views/ReviewView';
@@ -22,14 +22,15 @@ const isKnownTab = (tab: string): boolean => KNOWN_TABS.includes(tab);
 export const MobileShell = () => {
   const activeTab = useFlowStore((s) => s.activeTab);
   const setActiveTab = useFlowStore((s) => s.setActiveTab);
-  const threads = useFlowStore((s) => s.threads);
-  const selectedThreadId = useFlowStore((s) => s.selectedThreadId);
-  const openThreadDetail = useFlowStore((s) => s.openThreadDetail);
+  const deskRows = useFlowStore((s) => s.deskRows);
   const backFromThreadDetail = useFlowStore((s) => s.backFromThreadDetail);
   const backToReview = useFlowStore((s) => s.backToReview);
   const backToThreadDetail = useFlowStore((s) => s.backToThreadDetail);
   const fromReviewDate = useFlowStore((s) => s.fromReviewDate);
   const fromThreadDetailId = useFlowStore((s) => s.fromThreadDetailId);
+  const [deskFocusRequest, setDeskFocusRequest] = useState<{ id: string; at: number } | null>(null);
+  const handleDeskFocusHandled = useCallback(() => setDeskFocusRequest(null), []);
+  const drawers = useMemo(() => deskRows.flatMap((row) => row.drawers), [deskRows]);
 
   useEffect(() => {
     if (isR2Configured() && loadR2Settings().enabled) {
@@ -63,7 +64,12 @@ export const MobileShell = () => {
         }
       }
 
-      if (activeTab === 'review' || activeTab === 'matrix' || activeTab === 'value-matrix' || activeTab === 'desk') {
+      if (activeTab === 'matrix' || activeTab === 'value-matrix') {
+        setActiveTab('review');
+        return;
+      }
+
+      if (activeTab === 'review' || activeTab === 'desk') {
         setActiveTab('record');
         return;
       }
@@ -98,23 +104,22 @@ export const MobileShell = () => {
           <div><h1 className="font-semibold text-lg tracking-tight">RailMind</h1><p className="text-xs text-slate-400">留住想法，串起思绪</p></div>
         </div>
         <nav className="space-y-1">
-          {([{ id: 'record', label: '记录', icon: PenTool }, { id: 'review', label: '回顾', icon: BookOpen }, { id: 'matrix', label: '四象限', icon: LayoutGrid }, { id: 'value-matrix', label: '價值四象限', icon: Gem }, { id: 'desk', label: '桌邊', icon: Rows3 }] as const).map(({ id, label, icon: Icon }) => (
+          {([{ id: 'record', label: '記錄', icon: PenTool }, { id: 'review', label: '回顧', icon: BookOpen }, { id: 'desk', label: '專案', icon: Rows3 }] as const).map(({ id, label, icon: Icon }) => (
             <button key={id} type="button" onClick={() => setActiveTab(id)} aria-current={activeTab === id ? 'page' : undefined}
               className={`w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors ${activeTab === id ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'}`}>
               <Icon className="h-4 w-4" />{label}
             </button>
           ))}
         </nav>
-        <div className="mt-8 mb-3 px-3 text-xs font-medium text-slate-400">思维线 · {threads.length}</div>
-        <nav className="min-h-0 flex-1 overflow-y-auto space-y-1" aria-label="思维线">
-          {threads.map((thread) => (
-            <button key={thread.id} type="button" onClick={() => openThreadDetail(thread.id)}
-              aria-current={activeTab === 'thread-detail' && selectedThreadId === thread.id ? 'page' : undefined}
-              className={`w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm ${activeTab === 'thread-detail' && selectedThreadId === thread.id ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}>
-              <GitFork className="h-4 w-4 shrink-0" /><span className="truncate">{thread.title}</span>
+        <div className="mt-8 mb-3 px-3 text-xs font-medium text-slate-400">專案 · {drawers.length}</div>
+        <nav className="min-h-0 flex-1 overflow-y-auto space-y-1" aria-label="專案">
+          {drawers.map((drawer) => (
+            <button key={drawer.id} type="button" onClick={() => { setDeskFocusRequest({ id: drawer.id, at: Date.now() }); setActiveTab('desk'); }}
+              className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-slate-600 hover:bg-slate-50">
+              <Rows3 className="h-4 w-4 shrink-0" /><span className="truncate">{drawer.title}</span>
             </button>
           ))}
-          {!threads.length && <p className="px-3 text-xs leading-6 text-slate-400">在记录中建立思维线后，可从这里快速打开。</p>}
+          {!drawers.length && <p className="px-3 text-xs leading-6 text-slate-400">在專案頁建立抽屜後，可從這裡快速打開。</p>}
         </nav>
         <p className="mt-5 px-3 text-xs leading-5 text-slate-400">随时记录 · 慢慢整理</p>
       </aside>
@@ -129,7 +134,9 @@ export const MobileShell = () => {
               {activeTab === 'matrix' && <EisenhowerMatrixView />}
               {activeTab === 'value-matrix' && <ValuePriorityMatrixView />}
               {activeTab === 'thread-detail' && <ThreadDetailView />}
-              {activeTab === 'desk' && <DeskEdgeView />}
+              {activeTab === 'desk' && (
+                <DeskEdgeView focusRequest={deskFocusRequest} onFocusHandled={handleDeskFocusHandled} />
+              )}
             </>
           ) : (
             <RecordView />

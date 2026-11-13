@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  BookOpen,
   Check,
   ChevronRight,
   Pencil,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useFlowStore } from '../store/useFlowStore';
 import { getLocalDateKey, formatTime } from '../utils/dateUtils';
+import { revealElement } from '../utils/scrollUtils';
 import { ConfirmDeleteModal } from '../components/modals/ConfirmDeleteModal';
 import type { DeskDrawer, DeskEdgeRow } from '../types';
 
@@ -47,7 +49,13 @@ function latestEntryText(drawer: DeskDrawer): string {
   return last ? last.text : '';
 }
 
-export function DeskEdgeView() {
+export function DeskEdgeView({
+  focusRequest,
+  onFocusHandled,
+}: {
+  focusRequest?: { id: string; at: number } | null;
+  onFocusHandled?: () => void;
+}) {
   const rows = useFlowStore((s) => s.deskRows);
   const records = useFlowStore((s) => s.records);
   const setActiveTab = useFlowStore((s) => s.setActiveTab);
@@ -64,6 +72,16 @@ export function DeskEdgeView() {
   const toggleDeskDrawer = useFlowStore((s) => s.toggleDeskDrawer);
   const toggleDeskDrawerDimmed = useFlowStore((s) => s.toggleDeskDrawerDimmed);
   const toggleCompletedRecord = useFlowStore((s) => s.toggleCompletedRecord);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    toggleDeskDrawer(focusRequest.id, true);
+    const timer = window.setTimeout(() => {
+      revealElement(document.getElementById(`desk-drawer-${focusRequest.id}`));
+      onFocusHandled?.();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [focusRequest, toggleDeskDrawer, onFocusHandled]);
 
   const todayKey = getLocalDateKey(new Date().toISOString());
   const [editingDrawerId, setEditingDrawerId] = useState<string | null>(null);
@@ -271,6 +289,18 @@ export function DeskEdgeView() {
     setEditingEntryKey(null);
   };
 
+  const reviewButton = (
+    <button
+      type="button"
+      onClick={() => setActiveTab('review')}
+      className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+      title="打開回顧"
+    >
+      <BookOpen className="h-3.5 w-3.5" />
+      回顧
+    </button>
+  );
+
   if (rows.length === 0) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-[#f7faf8]">
@@ -289,11 +319,12 @@ export function DeskEdgeView() {
               <div className="min-w-0">
                 <h2 className="flex items-center gap-1.5 text-base font-semibold text-gray-900">
                   <Rows3 className="h-4 w-4 text-emerald-600" />
-                  桌邊抽屜
+                  專案
                 </h2>
-                <p className="truncate text-[11px] text-gray-500">按日期自動聚合 · 新增抽屜即同步時間流</p>
+                <p className="truncate text-[11px] text-gray-500">按日期聚合的專案抽屜 · 新增即同步時間流</p>
               </div>
             </div>
+            {reviewButton}
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
@@ -337,19 +368,22 @@ export function DeskEdgeView() {
             <div className="min-w-0">
               <h2 className="flex items-center gap-1.5 text-base font-semibold text-gray-900">
                 <Rows3 className="h-4 w-4 text-emerald-600" />
-                桌邊抽屜
+                專案
               </h2>
-              <p className="truncate text-[11px] text-gray-500">按日期自動聚合 · 抽屜 ↔ 時間流同步</p>
+              <p className="truncate text-[11px] text-gray-500">按日期聚合 · 抽屜 ↔ 時間流同步</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleAddDrawerToToday}
-            className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            今天新增抽屜
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {reviewButton}
+            <button
+              type="button"
+              onClick={handleAddDrawerToToday}
+              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              今天新增抽屜
+            </button>
+          </div>
         </div>
       </header>
 
@@ -423,6 +457,7 @@ export function DeskEdgeView() {
                       return (
                         <button
                           key={drawer.id}
+                          id={`desk-drawer-${drawer.id}`}
                           type="button"
                           onClick={() => {
                             // 互斥由 store 的 toggleDeskDrawer 全範圍處理，這裡只傳當前切換值

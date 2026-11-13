@@ -42,31 +42,43 @@ export function saveR2Settings(settings: R2Config): void {
   }
 }
 
+function readSecret(key: string): string {
+  return localStorage.getItem(key) ?? '';
+}
+
+function writeSecret(key: string, value: string): void {
+  const trimmed = value.trim();
+  if (trimmed) {
+    localStorage.setItem(key, trimmed);
+  } else {
+    localStorage.removeItem(key);
+  }
+}
+
 export function getSecretAccessKey(): string {
-  return localStorage.getItem(R2_SECRET_KEY) ?? '';
+  return readSecret(R2_SECRET_KEY);
 }
 
 export function setSecretAccessKey(value: string): void {
-  const trimmed = value.trim();
-  if (trimmed) {
-    localStorage.setItem(R2_SECRET_KEY, trimmed);
-  } else {
-    localStorage.removeItem(R2_SECRET_KEY);
-  }
+  writeSecret(R2_SECRET_KEY, value);
 }
 
 export function clearSecretAccessKey(): void {
   localStorage.removeItem(R2_SECRET_KEY);
 }
 
-export function isR2Configured(): boolean {
-  const settings = loadR2Settings();
+/** 設定是否足以建立同步連線（不讀 localStorage，供呼叫方複用已載入的設定）。 */
+export function isR2ConfigUsable(settings: R2Config): boolean {
   return Boolean(
     settings.accountId.trim() &&
     settings.accessKeyId.trim() &&
     settings.bucketName.trim() &&
-    getSecretAccessKey().trim()
+    settings.secretAccessKey.trim()
   );
+}
+
+export function isR2Configured(): boolean {
+  return isR2ConfigUsable(loadR2Settings());
 }
 
 // Tombstone persistence

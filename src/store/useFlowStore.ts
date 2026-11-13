@@ -12,12 +12,14 @@ import {
   DeskEdgeRow,
   DeskDrawer,
   DeskEntry,
+  RecordViewMode,
 } from '../types';
 import { generateId, getLocalDateKey } from '../utils/dateUtils';
 import { pickRandomQuoteColor } from '../utils/quoteColors';
 import { createR2SyncService, reportR2SyncFailure } from '../sync';
 import { loadR2Settings, removeTombstoneRecords } from '../sync/credentials';
 import { createQuotaSafeStorage } from './quotaSafeStorage';
+import { isRecordViewMode } from '../utils/recordViewMode';
 
 function triggerAutoSync(action: (sync: ReturnType<typeof createR2SyncService>) => Promise<void> | void) {
   if (!loadR2Settings().enabled) return;
@@ -102,7 +104,7 @@ interface FlowState {
   activeTab: ActiveTab;
   selectedThreadId: string | null;
   selectedDate: string | null; // filter date in RecordView (null = default today)
-  recordViewMode: 'timeline' | 'daily-pages';
+  recordViewMode: RecordViewMode;
   timelineDateHeaderBackgroundOpacity: number; // 时间流日期标题背景不透明度（0-100）
   dailyPageDateHeaderBackgroundOpacity: number; // 翻页日期标题背景不透明度（0-100）
   fromReviewDate: boolean; // 是否从回顾页点击某日期跳转而来
@@ -183,7 +185,7 @@ interface FlowState {
   setHighlightRecordId: (id: string | null) => void;
   setQuickSelectedThreadId: (id: string | null) => void;
   setSelectedDate: (date: string | null) => void;
-  setRecordViewMode: (mode: 'timeline' | 'daily-pages') => void;
+  setRecordViewMode: (mode: RecordViewMode) => void;
   setTimelineDateHeaderBackgroundOpacity: (opacity: number) => void;
   setDailyPageDateHeaderBackgroundOpacity: (opacity: number) => void;
   setHomeLink: (link: { shownName: string; href: string } | null) => void;
@@ -217,7 +219,7 @@ interface FlowState {
 interface ThreadDetailReturnContext {
   tab: 'record' | 'review';
   selectedDate: string | null;
-  recordViewMode: 'timeline' | 'daily-pages';
+  recordViewMode: RecordViewMode;
   fromReviewDate: boolean;
   fromThreadDetailId: string | null;
 }
@@ -295,7 +297,7 @@ function normalizePersistedState(persistedState: unknown): PersistedFlowState {
     selectedDate: state.selectedDate ?? null,
     fromReviewDate: state.fromReviewDate === true,
     fromThreadDetailId: state.fromThreadDetailId ?? null,
-    recordViewMode: state.recordViewMode === 'daily-pages' ? 'daily-pages' : 'timeline',
+    recordViewMode: isRecordViewMode(state.recordViewMode) ? state.recordViewMode : 'timeline',
     timelineDateHeaderBackgroundOpacity:
       typeof state.timelineDateHeaderBackgroundOpacity === 'number'
         ? state.timelineDateHeaderBackgroundOpacity

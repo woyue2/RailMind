@@ -1,5 +1,6 @@
-import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useLayoutEffect, type ReactNode, type RefObject } from 'react';
 import { useFlowStore } from '../../store/useFlowStore';
+import { useTagSectionState } from './tagPageState';
 import { RecordItemRow } from './RecordItemRow';
 import { RecordInputBar } from './RecordInputBar';
 import { RecordSearch } from './RecordSearch';
@@ -9,13 +10,20 @@ import { TagPickerModal } from '../../components/modals/TagPickerModal';
 import { DeskPickerModal } from '../../components/modals/DeskPickerModal';
 import { SettingsModal } from '../../components/modals/SettingsModal';
 import { HomeLinkModal } from '../../components/modals/HomeLinkModal';
-import { getRelativeDayMeta, getLocalDateKey } from '../../utils/dateUtils';
+import { getRelativeDayMeta, getLocalDateKey, appDateKey, appDateKeyOffset } from '../../utils/dateUtils';
 import { buildRecordBranches } from '../../utils/recordBranches';
-import { revealElement } from '../../utils/scrollUtils';
-import { EnrichedRecordItem, RecordItem } from '../../types';
+import { buildDrawerByEntryId } from '../../utils/deskLookup';
+import {
+  buildTagSections,
+  tagSectionKeyOf,
+  UNTAGGED_SECTION_KEY,
+  type TagSection,
+  type TagDayGroup,
+} from '../../utils/tagPages';
+import { flashRecord, revealElement } from '../../utils/scrollUtils';
+import { RecordTreeNode, RecordItem, RecordViewMode } from '../../types';
 import {
   Calendar,
-  RotateCcw,
   BookOpen,
   ArrowLeft,
   Cloud,
@@ -25,12 +33,10 @@ import {
   Link,
   List,
   PanelsTopLeft,
-  ChevronLeft,
-  ChevronRight,
-  LayoutGrid,
   Rows3,
+  Tag,
+  Tags,
 } from 'lucide-react';
-import { format, subDays } from 'date-fns';
 import { isR2Configured, loadR2Settings } from '../../sync/credentials';
 
 interface DayGroup {
@@ -39,7 +45,79 @@ interface DayGroup {
   isToday: boolean;
   isYesterday: boolean;
   count: number;
-  roots: EnrichedRecordItem[];
+  roots: RecordTreeNode[];
+}
+
+/** 從 startIndex 起沿 step 方向找最近一个有记录的日期页。 */
+function findRecordedPage(groups: DayGroup[], startIndex: number, step: 1 | -1): DayGroup | null {
+  for (let index = startIndex; index >= 0 && index < groups.length; index += step) {
+    if (groups[index].count > 0) return groups[index];
+  }
+  return null;
+}
+
+/** 日期翻页与标签翻页共用的横向快照滚动容器（外壳与 section 样式保持单一来源）。 */
+function PagedScroller<T>({
+  pages,
+  getKey,
+  scrollerRef,
+  onScroll,
+  ariaLabel,
+  sectionAriaLabel,
+  renderPage,
+}: {
+  pages: T[];
+  getKey: (page: T) => string;
+  scrollerRef: RefObject<HTMLDivElement>;
+  onScroll: () => void;
+  ariaLabel: string;
+  sectionAriaLabel: (page: T) => string;
+  renderPage: (page: T) => ReactNode;
+}) {
+  return (
+    <div
+      ref={scrollerRef}
+      onScroll={onScroll}
+      className="daily-page-scroller flex flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain"
+      aria-label={ariaLabel}
+    >
+      {pages.map((page) => (
+        <section
+          key={getKey(page)}
+          className="h-full w-full flex-none snap-start overflow-y-auto px-2 py-2"
+          aria-label={sectionAriaLabel(page)}
+        >
+          {renderPage(page)}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** 翻页快捷条上的胶囊按钮，日期页与标签页共用同一套选中样式。 */
+function QuickChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex flex-shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+        active
+          ? 'border-amber-400 bg-amber-50 text-amber-800'
+          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export const RecordView = () => {
@@ -51,6 +129,8 @@ export const RecordView = () => {
   const timelineDateHeaderBackgroundOpacity = useFlowStore((s) => s.timelineDateHeaderBackgroundOpacity);
   const dailyPageDateHeaderBackgroundOpacity = useFlowStore((s) => s.dailyPageDateHeaderBackgroundOpacity);
   const setRecordViewMode = useFlowStore((s) => s.setRecordViewMode);
+  const selectedTagKey = useTagSectionState((s) => s.selectedTagKey);
+  const setSelectedTagKey = useTagSectionState((s) => s.setSelectedTagKey);
   const fromReviewDate = useFlowStore((s) => s.fromReviewDate);
   const fromThreadDetailId = useFlowStore((s) => s.fromThreadDetailId);
   const setActiveTab = useFlowStore((s) => s.setActiveTab);
@@ -68,18 +148,8 @@ export const RecordView = () => {
   const homeLink = useFlowStore((s) => s.homeLink);
   const setHomeLink = useFlowStore((s) => s.setHomeLink);
 
-  // 建立 entryId -> drawerTitle 的快速映射表
-  const entryDrawerTitleMap = useMemo(() => {
-    const map = new Map<string, string>();
-    deskRows.forEach((row) => {
-      row.drawers.forEach((drawer) => {
-        drawer.entries.forEach((entry) => {
-          map.set(entry.id, drawer.title);
-        });
-      });
-    });
-    return map;
-  }, [deskRows]);
+  // 建立 entryId -> 抽屜 的快速映射表
+  const drawerByEntryId = useMemo(() => buildDrawerByEntryId(deskRows), [deskRows]);
 
   const parentThread = fromThreadDetailId
     ? threads.find((t) => t.id === fromThreadDetailId)
@@ -90,10 +160,10 @@ export const RecordView = () => {
   const bottomAnchorRef = useRef<HTMLDivElement>(null);
   const pageScrollerRef = useRef<HTMLDivElement>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const todayDateKey = format(new Date(), 'yyyy-MM-dd');
-  const yesterdayDateKey = format(subDays(new Date(), 1), 'yyyy-MM-dd');
-  const weekAgoDateKey = format(subDays(new Date(), 7), 'yyyy-MM-dd');
-  const monthAgoDateKey = format(subDays(new Date(), 30), 'yyyy-MM-dd');
+  const todayDateKey = appDateKey();
+  const yesterdayDateKey = appDateKeyOffset(1);
+  const weekAgoDateKey = appDateKeyOffset(7);
+  const monthAgoDateKey = appDateKeyOffset(30);
   const [visiblePageDate, setVisiblePageDate] = useState(selectedDate || todayDateKey);
   const [customPageDate, setCustomPageDate] = useState<string | null>(null);
   const visiblePageDateRef = useRef(visiblePageDate);
@@ -177,10 +247,18 @@ export const RecordView = () => {
     longPressTimer.current = null;
   };
 
+  // 展示树只建一次，日期页与标签页共用。
+  const branchTree = useMemo(
+    () => buildRecordBranches(records, tags, threads),
+    [records, tags, threads]
+  );
+
   // Multi-day chronological grouping with hierarchical tree construction
   const dayGroups: DayGroup[] = useMemo(() => {
     // 1. Group records by Date (yyyy-MM-dd)
-    const { days: map, parents } = buildRecordBranches(records, tags, threads);
+    // 複製一份 map：補齊空白日期頁時不能污染共用的 branchTree。
+    const map = new Map(branchTree.days);
+    const parents = branchTree.parents;
 
     // 2. Sort dates in chronological ascending order (oldest date at Top -> newest/today at Bottom)
     const requiredDateKeys = recordViewMode === 'daily-pages'
@@ -197,7 +275,7 @@ export const RecordView = () => {
     // Each day owns its real records; shared global children include later continuations.
     const groups: DayGroup[] = sortedDateKeys.map((dateKey) => {
       const dayRecords = map.get(dateKey) || [];
-      const recordLookup = new Map<string, EnrichedRecordItem>();
+      const recordLookup = new Map<string, RecordTreeNode>();
 
       dayRecords.forEach((item) => {
         recordLookup.set(item.id, item);
@@ -224,9 +302,7 @@ export const RecordView = () => {
 
     return groups;
   }, [
-    records,
-    tags,
-    threads,
+    branchTree,
     recordViewMode,
     todayDateKey,
     yesterdayDateKey,
@@ -234,8 +310,35 @@ export const RecordView = () => {
     monthAgoDateKey,
     selectedDate,
     customPageDate,
-    deskRows,
   ]);
+
+  // 標籤視圖：單頁縱向列出所有標籤（A-Z，未打標籤最後），標籤內按日期分組；
+  // 頂部 chips 作為錨點滾動跳轉。
+  const tagSections: TagSection[] = useMemo(
+    () =>
+      recordViewMode === 'tag-pages'
+        ? buildTagSections(branchTree.nodes, tags, (record) =>
+            getLocalDateKey(record.created_at)
+          )
+        : [],
+    [recordViewMode, branchTree, tags]
+  );
+  const tagSectionSignature = tagSections.map((section) => section.tagKey).join('|');
+  const tagKeyForRecord = useMemo(() => {
+    const validTagIds = new Set(tags.map((tag) => tag.id));
+    return (record: Pick<RecordItem, 'tag_id'>) => tagSectionKeyOf(record, validTagIds);
+  }, [tags]);
+  const tagSectionKeyFor = useMemo(() => {
+    const validTagIds = new Set(tags.map((tag) => tag.id));
+    return (record: Pick<RecordItem, 'tag_id' | 'created_at'>) =>
+      `${tagSectionKeyOf(record, validTagIds)}@${getLocalDateKey(record.created_at)}`;
+  }, [tags]);
+  /** 切換到標籤視圖時希望對齊的日期；由 layout effect 消費。 */
+  const pendingTagDateRef = useRef<string | null>(null);
+  const tagScrollRef = useRef<HTMLDivElement>(null);
+  const tagScrollFrameRef = useRef<number | null>(null);
+  /** 程式化捲動後的短暫時間內不要用滾動位置反算目前標籤，否則會跳到上一節。 */
+  const tagProgrammaticScrollRef = useRef(0);
 
   useEffect(() => {
     visiblePageDateRef.current = visiblePageDate;
@@ -246,19 +349,78 @@ export const RecordView = () => {
     [dayGroups, visiblePageDate]
   );
 
-  const scrollToPage = (index: number, behavior: ScrollBehavior = 'auto') => {
-    const scroller = pageScrollerRef.current;
-    const safeIndex = Math.min(Math.max(index, 0), dayGroups.length - 1);
-    const target = dayGroups[safeIndex];
-    if (!scroller || !target) return;
-    setVisiblePageDate(target.dateKey);
-    scroller.scrollTo({ left: safeIndex * scroller.clientWidth, behavior });
-  };
-
   const jumpToDate = (dateKey: string) => {
     setCustomPageDate(dateKey);
     visiblePageDateRef.current = dateKey;
     setVisiblePageDate(dateKey);
+  };
+
+  const activeTagKey = selectedTagKey;
+
+  /**
+   * 三種模式共用「目前日期」：切換時對齊同一天。
+   * - 進入標籤翻頁：把目前日期暫存給 layout effect，優先落到同標籤同一天，其次未打標籤同一天、任一同一天。
+   * - 離開標籤翻頁：把目前標籤頁的日期寫回 visiblePageDate，並同步 selectedDate。
+   *   翻頁與時間流的定位都讀 selectedDate，若不同步，舊的 selectedDate 會蓋掉剛切過去的日期。
+   */
+  const handleViewModeChange = (next: RecordViewMode) => {
+    if (next === recordViewMode) return;
+    if (next === 'tag-pages') {
+      pendingTagDateRef.current =
+        recordViewMode === 'timeline'
+          ? selectedDate || visiblePageDate || todayDateKey
+          : visiblePageDate || selectedDate || todayDateKey;
+    } else if (recordViewMode === 'tag-pages') {
+      // 標籤視圖的目前日期由滾動位置即時維護在 visiblePageDate。
+      const dateKey = visiblePageDate || selectedDate;
+      if (dateKey) {
+        visiblePageDateRef.current = dateKey;
+        setVisiblePageDate(dateKey);
+        setCustomPageDate(dateKey);
+        useFlowStore.getState().setSelectedDate(dateKey);
+      }
+    } else if (next === 'timeline') {
+      useFlowStore.getState().setSelectedDate(visiblePageDate || selectedDate || todayDateKey);
+    }
+    setRecordViewMode(next);
+  };
+
+  /** 標籤容器內元素相對捲動頂部的偏移。 */
+  const tagOffsetOf = (element: HTMLElement): number => {
+    const container = tagScrollRef.current;
+    if (!container) return 0;
+    return (
+      element.getBoundingClientRect().top -
+      container.getBoundingClientRect().top +
+      container.scrollTop
+    );
+  };
+
+  const latestDateKey = (section: TagSection): string | null =>
+    section.days.length ? section.days[section.days.length - 1].dateKey : null;
+
+  /** 滾動到某個標籤節（可指定日期錨點）；同步目前標籤與日期。 */
+  const scrollToTagSection = (tagKey: string, dateKey?: string | null): boolean => {
+    const section = tagSections.find((item) => item.tagKey === tagKey);
+    if (!section) return false;
+    setSelectedTagKey(tagKey);
+    tagProgrammaticScrollRef.current = Date.now();
+    const targetDate =
+      dateKey && section.days.some((day) => day.dateKey === dateKey && day.count > 0)
+        ? dateKey
+        : latestDateKey(section);
+    const anchor =
+      (targetDate && document.getElementById(`tag-day-${tagKey}-${targetDate}`)) ||
+      document.getElementById(`tag-section-${tagKey}`);
+    const container = tagScrollRef.current;
+    if (anchor && container) {
+      container.scrollTo({ top: Math.max(0, tagOffsetOf(anchor) - 8), behavior: 'auto' });
+    }
+    if (targetDate) {
+      visiblePageDateRef.current = targetDate;
+      setVisiblePageDate(targetDate);
+    }
+    return true;
   };
 
   const showSavedTodayHint = (message: string) => {
@@ -272,71 +434,44 @@ export const RecordView = () => {
     }, 4000);
   };
 
-  const goToToday = () => {
-    resetToTodayRecord();
-    if (recordViewMode === 'daily-pages') {
-      jumpToDate(todayDateKey);
-    } else {
-      revealElement(bottomAnchorRef.current, 'end');
-    }
-    setSavedTodayHint(null);
-    if (savedTodayHintTimerRef.current !== null) {
-      window.clearTimeout(savedTodayHintTimerRef.current);
-      savedTodayHintTimerRef.current = null;
-    }
-  };
-
   const handleRecordCreated = (id: string) => {
+    if (recordViewMode === 'tag-pages') {
+      // 新記錄預設無標籤：留在目前位置，只提示它落在哪一節。
+      if (activeTagKey === UNTAGGED_SECTION_KEY) flashRecord(id, 300);
+      showSavedTodayHint('已存入「未打標籤」');
+      return;
+    }
+
     if (isViewingHistoricalPage) {
       const hasBranchContext = Boolean(activeBranchParentId || activeQuoteRecordId);
       if (hasBranchContext) {
-        useFlowStore.getState().setHighlightRecordId(id);
-        window.setTimeout(() => {
-          const previewEl = document.querySelector<HTMLElement>(`[id^="record-preview-"][data-record-id="${id}"]`);
-          const targetEl = previewEl || document.getElementById(`record-${id}`);
-          if (targetEl && (previewEl || !isViewingHistoricalPage)) {
-            revealElement(targetEl);
-          }
-          window.setTimeout(() => {
-            if (useFlowStore.getState().highlightRecordId === id) useFlowStore.getState().setHighlightRecordId(null);
-          }, 1600);
-        }, 250);
+        flashRecord(id, 250, () =>
+          document.querySelector<HTMLElement>(`[id^="record-preview-"][data-record-id="${id}"]`)
+        );
       }
-      showSavedTodayHint('已存到今天 · 回到今天');
+      showSavedTodayHint('已存到今天');
       return;
     }
 
     useFlowStore.getState().setSelectedDate(todayDateKey);
     visiblePageDateRef.current = todayDateKey;
     setVisiblePageDate(todayDateKey);
-    useFlowStore.getState().setHighlightRecordId(id);
-    window.setTimeout(() => {
-      revealElement(document.getElementById(`record-${id}`));
-      window.setTimeout(() => {
-        if (useFlowStore.getState().highlightRecordId === id) useFlowStore.getState().setHighlightRecordId(null);
-      }, 1600);
-    }, 300);
+    flashRecord(id, 300);
   };
 
   const handleSearchResult = (record: RecordItem) => {
     const dateKey = getLocalDateKey(record.created_at);
     if (recordViewMode === 'daily-pages') jumpToDate(dateKey);
+    else if (recordViewMode === 'tag-pages') scrollToTagSection(tagKeyForRecord(record), dateKey);
     else useFlowStore.getState().setSelectedDate(dateKey);
-    useFlowStore.getState().setHighlightRecordId(record.id);
-    window.setTimeout(() => {
-      revealElement(document.getElementById(`record-${record.id}`));
-      window.setTimeout(() => {
-        if (useFlowStore.getState().highlightRecordId === record.id) {
-          useFlowStore.getState().setHighlightRecordId(null);
-        }
-      }, 1600);
-    }, 350);
+    flashRecord(record.id, 350);
   };
 
   const handlePageScroll = () => {
     if (pageScrollFrameRef.current !== null) return;
     pageScrollFrameRef.current = window.requestAnimationFrame(() => {
       pageScrollFrameRef.current = null;
+      if (useFlowStore.getState().recordViewMode !== 'daily-pages') return;
       const scroller = pageScrollerRef.current;
       if (!scroller || scroller.clientWidth === 0) return;
       const index = Math.min(
@@ -350,11 +485,67 @@ export const RecordView = () => {
     });
   };
 
+  const handleTagScroll = () => {
+    if (tagScrollFrameRef.current !== null) return;
+    tagScrollFrameRef.current = window.requestAnimationFrame(() => {
+      tagScrollFrameRef.current = null;
+      if (useFlowStore.getState().recordViewMode !== 'tag-pages') return;
+      if (Date.now() - tagProgrammaticScrollRef.current < 500) return;
+      const container = tagScrollRef.current;
+      if (!container || tagSections.length === 0) return;
+      const top = container.scrollTop + 12;
+      const atBottom =
+        container.scrollTop + container.clientHeight >= container.scrollHeight - 4;
+      let activeSection: TagSection | null = null;
+      for (const section of tagSections) {
+        const element = document.getElementById(`tag-section-${section.tagKey}`);
+        if (element && tagOffsetOf(element) <= top) activeSection = section;
+      }
+      if (atBottom) activeSection = tagSections[tagSections.length - 1];
+      if (
+        activeSection &&
+        activeSection.tagKey !== useTagSectionState.getState().selectedTagKey
+      ) {
+        setSelectedTagKey(activeSection.tagKey);
+      }
+      let activeDate: string | null = null;
+      if (atBottom && activeSection) {
+        activeDate = latestDateKey(activeSection);
+      } else {
+        for (const section of tagSections) {
+          for (const day of section.days) {
+            const element = document.getElementById(`tag-day-${section.tagKey}-${day.dateKey}`);
+            if (element && tagOffsetOf(element) <= top + 40) activeDate = day.dateKey;
+          }
+        }
+      }
+      if (activeDate && activeDate !== visiblePageDateRef.current) {
+        visiblePageDateRef.current = activeDate;
+        setVisiblePageDate(activeDate);
+      }
+    });
+  };
+
   useEffect(() => () => {
     if (pageScrollFrameRef.current !== null) {
       window.cancelAnimationFrame(pageScrollFrameRef.current);
     }
+    if (tagScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(tagScrollFrameRef.current);
+    }
   }, []);
+
+  // 切換模式時取消上一個模式排隊中的滾動回呼，避免它改寫新模式的頁碼。
+  useEffect(() => {
+    if (pageScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(pageScrollFrameRef.current);
+      pageScrollFrameRef.current = null;
+    }
+    if (tagScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(tagScrollFrameRef.current);
+      tagScrollFrameRef.current = null;
+    }
+  }, [recordViewMode]);
 
   useLayoutEffect(() => {
     if (recordViewMode !== 'daily-pages' || dayGroups.length === 0) return;
@@ -391,6 +582,60 @@ export const RecordView = () => {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [recordViewMode, selectedDate, dayGroups, todayDateKey]);
+
+  // 進入標籤視圖或標籤集合變動時定位：
+  // 有 pending 日期就優先找「同標籤同一天」的錨點，其次未打標籤同一天、任一同一天、最近日期，
+  // 都沒有才保留上次標籤節。定位後同步 visiblePageDate。
+  useLayoutEffect(() => {
+    if (recordViewMode !== 'tag-pages') return;
+    if (tagSections.length === 0) {
+      pendingTagDateRef.current = null;
+      return;
+    }
+    const pendingDate = pendingTagDateRef.current;
+    pendingTagDateRef.current = null;
+    const currentTag = useTagSectionState.getState().selectedTagKey;
+    const hasDate = (section: TagSection, dateKey: string) =>
+      section.days.some((day) => day.dateKey === dateKey && day.count > 0);
+    const dayValue = (key: string | null) => (key ? Date.parse(key) : Number.POSITIVE_INFINITY);
+    let target =
+      tagSections.find((section) => section.tagKey === currentTag) ??
+      tagSections.find((section) => section.isUntagged) ??
+      tagSections[0];
+    if (pendingDate) {
+      target =
+        tagSections.find(
+          (section) => section.tagKey === currentTag && hasDate(section, pendingDate)
+        ) ??
+        tagSections.find((section) => section.isUntagged && hasDate(section, pendingDate)) ??
+        tagSections.find((section) => hasDate(section, pendingDate)) ??
+        [...tagSections]
+          .filter((section) => section.days.length > 0)
+          .sort(
+            (a, b) =>
+              Math.abs(dayValue(latestDateKey(a)) - Date.parse(pendingDate)) -
+              Math.abs(dayValue(latestDateKey(b)) - Date.parse(pendingDate))
+          )[0] ??
+        target;
+    }
+    setSelectedTagKey(target.tagKey);
+    const targetDate =
+      pendingDate && hasDate(target, pendingDate) ? pendingDate : latestDateKey(target);
+    const anchor =
+      (targetDate && document.getElementById(`tag-day-${target.tagKey}-${targetDate}`)) ||
+      document.getElementById(`tag-section-${target.tagKey}`);
+    const container = tagScrollRef.current;
+    if (anchor && container) {
+      tagProgrammaticScrollRef.current = Date.now();
+      container.scrollTo({ top: Math.max(0, tagOffsetOf(anchor) - 8), behavior: 'auto' });
+    }
+    if (targetDate) {
+      visiblePageDateRef.current = targetDate;
+      setVisiblePageDate(targetDate);
+    }
+    // 內容（記錄）變動不需要重新定位，只有標籤集合變動時才校正。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordViewMode, tagSectionSignature]);
 
   useEffect(() => {
     if (recordViewMode === 'daily-pages' && !selectedDate) {
@@ -490,14 +735,8 @@ export const RecordView = () => {
     createDrawerFromRecord(recordId);
   };
 
-  const currentPage = dayGroups[pageIndex];
-  const previousPage = pageIndex > 0 ? dayGroups[pageIndex - 1] : null;
-  const nextPage = pageIndex < dayGroups.length - 1 ? dayGroups[pageIndex + 1] : null;
-  const previousRecordedPage = [...dayGroups]
-    .slice(0, pageIndex)
-    .reverse()
-    .find((group) => group.count > 0) ?? null;
-  const nextRecordedPage = dayGroups.slice(pageIndex + 1).find((group) => group.count > 0) ?? null;
+  const previousRecordedPage = findRecordedPage(dayGroups, pageIndex - 1, -1);
+  const nextRecordedPage = findRecordedPage(dayGroups, pageIndex + 1, 1);
   const quickJumpTargets = [
     { label: '今天', dateKey: todayDateKey },
     { label: '昨天', dateKey: yesterdayDateKey },
@@ -506,6 +745,7 @@ export const RecordView = () => {
   ];
   const isViewingHistoricalPage =
     recordViewMode === 'daily-pages' && visiblePageDate !== todayDateKey;
+  const isNestedEntry = Boolean(fromReviewDate || fromThreadDetailId);
 
   const renderRecordTree = (group: DayGroup) => (
     <div className="space-y-0.5 pl-1">
@@ -519,11 +759,94 @@ export const RecordView = () => {
             onOpenTagPicker={handleOpenTagPicker}
             onOpenDeskPicker={handleOpenDeskPicker}
             onCreateDrawerFromRecord={handleCreateDrawerFromRecord}
-            deskDrawerTitle={item.desk_entry_id ? entryDrawerTitleMap.get(item.desk_entry_id) : undefined}
+            deskDrawerTitle={item.desk_entry_id ? drawerByEntryId.get(item.desk_entry_id)?.title : undefined}
             onRecordsDeleted={handleRecordsDeleted}
           />
         </div>
       ))}
+    </div>
+  );
+
+  const handleJumpToTagRecord = (record: RecordItem) => {
+    scrollToTagSection(tagKeyForRecord(record), getLocalDateKey(record.created_at));
+    flashRecord(record.id, 300);
+  };
+
+  const renderTagTree = (section: TagSection, day: TagDayGroup) => (
+    <div className="space-y-0.5 pl-1">
+      {day.roots.map((item) => (
+        <div key={item.id} className="border-b border-gray-100/70 last:border-b-0 pb-1 mb-1">
+          <RecordItemRow
+            item={item}
+            level={0}
+            page={{ key: `${section.tagKey}@${day.dateKey}`, keyOf: tagSectionKeyFor }}
+            onJumpToRecord={handleJumpToTagRecord}
+            onOpenThreadPicker={handleOpenThreadPicker}
+            onOpenTagPicker={handleOpenTagPicker}
+            onOpenDeskPicker={handleOpenDeskPicker}
+            onCreateDrawerFromRecord={handleCreateDrawerFromRecord}
+            deskDrawerTitle={item.desk_entry_id ? drawerByEntryId.get(item.desk_entry_id)?.title : undefined}
+            onRecordsDeleted={handleRecordsDeleted}
+          />
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderDayPage = (group: DayGroup) => (
+    <div className="min-h-full rounded-2xl bg-white">
+      <div className="sticky top-0 z-10 mb-2 flex items-center justify-between bg-white/90 px-1 py-1.5 backdrop-blur-md">
+        <div
+          className="flex items-center gap-1.5 rounded-full border border-amber-900/20 px-3 py-1 text-[11px] font-medium text-amber-50 shadow-xs"
+          style={{ backgroundColor: `rgb(69 26 3 / ${dailyPageDateHeaderBackgroundOpacity / 100})` }}
+        >
+          <Calendar className="h-3 w-3 text-amber-300" />
+          <span>{group.label}</span>
+          <span className="font-mono text-[10px] text-amber-200/70">({group.count}条)</span>
+        </div>
+        {group.isToday && (
+          <div className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-700">
+            <Sparkles className="h-2.5 w-2.5 text-amber-500" />
+            此刻进行时
+          </div>
+        )}
+      </div>
+
+      {group.roots.length > 0 ? (
+        renderRecordTree(group)
+      ) : (
+        <div className="flex flex-col items-center justify-center px-6 py-20 text-center text-gray-400">
+          <Calendar className="mb-3 h-8 w-8 text-gray-300" />
+          <p className="text-sm font-medium text-gray-500">
+            {group.isToday ? '今天还没有记录' : `${group.label}没有记录`}
+          </p>
+          <p className="mt-1 text-xs">
+            {group.isToday ? '从下方写下此刻的第一个想法' : '可以查看前后最近有记录的日期'}
+          </p>
+          {!group.isToday && (previousRecordedPage || nextRecordedPage) && (
+            <div className="mt-4 flex items-center gap-2">
+              {previousRecordedPage && (
+                <button
+                  type="button"
+                  onClick={() => jumpToDate(previousRecordedPage.dateKey)}
+                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-medium text-gray-600 shadow-xs"
+                >
+                  ← {previousRecordedPage.label}
+                </button>
+              )}
+              {nextRecordedPage && (
+                <button
+                  type="button"
+                  onClick={() => jumpToDate(nextRecordedPage.dateKey)}
+                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-medium text-gray-600 shadow-xs"
+                >
+                  {nextRecordedPage.label} →
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -553,25 +876,14 @@ export const RecordView = () => {
             </button>
           ) : null}
 
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-gray-900 text-sm tracking-tight flex items-center gap-1.5">
+          <div className={`${isNestedEntry ? 'hidden md:flex' : 'flex'} items-center gap-2`}>
+            <span className="font-bold text-gray-900 text-sm tracking-tight flex items-center gap-1.5 whitespace-nowrap shrink-0">
               <span>超电思</span>
             </span>
             <span className="hidden text-[11px] text-gray-400 font-medium md:inline">
               今天 {headerSummary.todayCount} 条 · 共 {headerSummary.totalCount} 条
             </span>
           </div>
-
-          {selectedDate && (
-            <button
-              onClick={resetToTodayRecord}
-              className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full font-medium transition-colors"
-              title="回到今天最新流"
-            >
-              <RotateCcw className="w-2.5 h-2.5" />
-              回今天
-            </button>
-          )}
         </div>
 
         <RecordSearch records={records} onSelect={handleSearchResult}
@@ -586,11 +898,11 @@ export const RecordView = () => {
               onPointerCancel={endLinkPress}
               onPointerLeave={endLinkPress}
               onClick={(event) => { if (longPressTriggered.current) { event.preventDefault(); return; } openHomeLink(); }}
-              className="min-h-9 max-w-28 flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900 px-2.5 rounded-lg hover:bg-blue-50 bg-blue-50/70 border border-blue-200/70 transition-colors"
+              className="hidden sm:flex min-h-9 max-w-28 items-center gap-1 text-xs text-blue-700 hover:text-blue-900 px-2.5 rounded-lg hover:bg-blue-50 bg-blue-50/70 border border-blue-200/70 transition-colors"
               title="点击打开链接，长按编辑名称和地址"
             ><Link className="w-3.5 h-3.5 flex-shrink-0" /><span className="font-medium truncate">{homeLink.shownName}</span></button>
           )}
-          {!homeLink && <button onClick={() => setHomeLinkModalOpen(true)} className="min-h-9 px-2 text-[11px] text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50" title="添加主页链接">+ 链接</button>}
+          {!homeLink && <button onClick={() => setHomeLinkModalOpen(true)} className="hidden sm:flex min-h-9 px-2 text-[11px] text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50" title="添加主页链接">+ 链接</button>}
           {/* Cloud Sync Status / Open Settings */}
           <button
             onClick={() => setSettingsModalOpen(true)}
@@ -604,7 +916,36 @@ export const RecordView = () => {
             {r2Enabled ? <Cloud className="w-3.5 h-3.5" /> : <Settings className="w-3.5 h-3.5" />}
           </button>
 
+          <div
+            role="group"
+            aria-label="记录页显示模式"
+            className="flex min-h-9 items-center rounded-lg border border-gray-200/60 bg-gray-50 p-0.5"
+          >
+            {([
+              { id: 'timeline', label: '时间流', icon: List },
+              { id: 'daily-pages', label: '翻页', icon: PanelsTopLeft },
+              { id: 'tag-pages', label: '标签', icon: Tags },
+            ] as const).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => handleViewModeChange(id)}
+                aria-pressed={recordViewMode === id}
+                aria-label={label}
+                title={label}
+                className={`flex min-h-8 min-w-8 items-center justify-center rounded-md transition-colors ${
+                  recordViewMode === id
+                    ? 'bg-white text-gray-900 shadow-xs ring-1 ring-gray-200'
+                    : 'text-gray-400 hover:text-gray-700'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+              </button>
+            ))}
+          </div>
+
           {/* Entry to Review View */}
+          {!isNestedEntry && (
           <button
             onClick={() => setActiveTab('review')}
             className="min-h-9 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-2.5 rounded-lg hover:bg-gray-100 bg-gray-50 border border-gray-200/60 transition-colors"
@@ -613,127 +954,81 @@ export const RecordView = () => {
             <BookOpen className="w-3.5 h-3.5 text-gray-600" />
             <span className="font-medium">回顾</span>
           </button>
-          <button
-            onClick={() => setActiveTab('matrix')}
-            className="min-h-9 flex items-center gap-1 text-xs text-violet-700 hover:text-violet-900 px-2.5 rounded-lg hover:bg-violet-100 bg-violet-50 border border-violet-200/70 transition-colors"
-            title="打開重要 × 緊急四象限"
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />
-            <span className="hidden font-medium sm:inline">四象限</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('value-matrix')}
-            className="min-h-9 flex items-center gap-1 text-xs text-fuchsia-700 hover:text-fuchsia-900 px-2.5 rounded-lg hover:bg-fuchsia-100 bg-fuchsia-50 border border-fuchsia-200/70 transition-colors"
-            title="打開價值 × 晚做損失四象限"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            <span className="hidden font-medium sm:inline">價值象限</span>
-          </button>
+          )}
           <button
             onClick={() => setActiveTab('desk')}
             className="min-h-9 flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-900 px-2.5 rounded-lg hover:bg-emerald-100 bg-emerald-50 border border-emerald-200/70 transition-colors"
-            title="打開桌邊抽屜"
+            title="打開專案"
           >
             <Rows3 className="h-3.5 w-3.5 text-emerald-600" />
-            <span className="font-medium text-emerald-700">桌邊</span>
+            <span className="font-medium text-emerald-700">專案</span>
           </button>
         </div>
       </div>
 
-      <div className="record-mode-bar relative z-20 flex min-h-11 flex-shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-3 py-1.5">
-        <div className="inline-flex h-9 w-[132px] flex-none rounded-lg bg-gray-100 p-0.5 text-[11px]" aria-label="记录页显示模式">
-          <button
-            type="button"
-            onClick={() => setRecordViewMode('timeline')}
-            aria-pressed={recordViewMode === 'timeline'}
-            className={`flex min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md transition-colors ${
-              recordViewMode === 'timeline' ? 'bg-white font-medium text-gray-900 shadow-xs' : 'text-gray-500'
-            }`}
-          >
-            <List className="h-3.5 w-3.5" />
-            时间流
-          </button>
-          <button
-            type="button"
-            onClick={() => setRecordViewMode('daily-pages')}
-            aria-pressed={recordViewMode === 'daily-pages'}
-            className={`flex min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md transition-colors ${
-              recordViewMode === 'daily-pages' ? 'bg-white font-medium text-gray-900 shadow-xs' : 'text-gray-500'
-            }`}
-          >
-            <PanelsTopLeft className="h-3.5 w-3.5" />
-            翻页
-          </button>
-        </div>
-
-        {recordViewMode === 'daily-pages' && currentPage && (
-          <div className="flex min-w-0 flex-1 items-center justify-between gap-1 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => scrollToPage(pageIndex - 1)}
-              disabled={!previousPage}
-              className="flex-none rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-25"
-              title={previousPage ? `上一页：${previousPage.label}` : '已经是最早一页'}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <div className="min-w-0 flex-1 text-center leading-tight">
-              <div className="truncate text-[11px] font-semibold text-gray-800">{currentPage.label}</div>
-              <div className="truncate text-[9px] text-gray-400">
-                {previousPage ? `← ${previousPage.label}` : '最早'} · {pageIndex + 1}/{dayGroups.length} · {nextPage ? `${nextPage.label} →` : '最新'}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => scrollToPage(pageIndex + 1)}
-              disabled={!nextPage}
-              className="flex-none rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-25"
-              title={nextPage ? `下一页：${nextPage.label}` : '已经是最新一页'}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {recordViewMode === 'daily-pages' && (
+      {recordViewMode !== 'timeline' && (recordViewMode !== 'tag-pages' || tagSections.length > 0) && (
         <div className="record-quick-jumps relative z-20 flex flex-shrink-0 items-center gap-1.5 overflow-x-auto border-b border-gray-100 bg-white px-3 py-1.5">
-          {quickJumpTargets.map((target) => {
-            const isActive = visiblePageDate === target.dateKey;
-            return (
+          {recordViewMode === 'daily-pages' ? (
+            <>
+              <div className="flex flex-shrink-0 items-center rounded-full bg-gray-900 px-2.5 py-1 text-[11px] font-semibold text-white">
+                {dayGroups[pageIndex]?.dateKey === visiblePageDate
+                  ? dayGroups[pageIndex].label
+                  : visiblePageDate}
+              </div>
+              {quickJumpTargets.map((target) => (
+                <QuickChip
+                  key={target.label}
+                  active={visiblePageDate === target.dateKey}
+                  onClick={() => jumpToDate(target.dateKey)}
+                >
+                  {target.label}
+                </QuickChip>
+              ))}
               <button
-                key={target.label}
                 type="button"
-                onClick={() => jumpToDate(target.dateKey)}
-                aria-pressed={isActive}
-                className={`flex-shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                  isActive
-                    ? 'border-amber-400 bg-amber-50 text-amber-800'
-                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                }`}
+                onClick={() => dateInputRef.current?.showPicker()}
+                className="flex flex-shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
               >
-                {target.label}
+                <Calendar className="h-3 w-3" />
+                日历
               </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => dateInputRef.current?.showPicker()}
-            className="flex flex-shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
-          >
-            <Calendar className="h-3 w-3" />
-            日历
-          </button>
-          <input
-            ref={dateInputRef}
-            type="date"
-            value={customPageDate ?? ''}
-            onChange={(event) => {
-              if (event.target.value) jumpToDate(event.target.value);
-            }}
-            className="fixed -left-[9999px] h-px w-px opacity-0"
-            aria-label="选择要查看的日期"
-          />
+              <input
+                ref={dateInputRef}
+                type="date"
+                value={customPageDate ?? ''}
+                onChange={(event) => {
+                  if (event.target.value) jumpToDate(event.target.value);
+                }}
+                className="fixed -left-[9999px] h-px w-px opacity-0"
+                aria-label="选择要查看的日期"
+              />
+            </>
+          ) : (
+            <>
+              <div className="flex flex-shrink-0 items-center rounded-full bg-gray-900 px-2.5 py-1 text-[11px] font-semibold text-white">
+                {tagSections.find((section) => section.tagKey === selectedTagKey)?.tagLabel ??
+                  '标签'}
+              </div>
+              {tagSections.map((section) => (
+                <QuickChip
+                  key={section.tagKey}
+                  active={section.tagKey === selectedTagKey}
+                  onClick={() => scrollToTagSection(section.tagKey)}
+                >
+                  {section.isUntagged ? (
+                    <Tag className="h-2.5 w-2.5" />
+                  ) : (
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: section.color ?? '#9CA3AF' }}
+                    />
+                  )}
+                  <span>{section.tagLabel}</span>
+                  <span className="font-mono text-[10px] text-gray-400">{section.count}</span>
+                </QuickChip>
+              ))}
+            </>
+          )}
         </div>
       )}
 
@@ -798,75 +1093,89 @@ export const RecordView = () => {
 
           <div ref={bottomAnchorRef} className="h-2" />
         </div>
-      ) : (
-        <div
-          ref={pageScrollerRef}
+      ) : recordViewMode === 'daily-pages' ? (
+        <PagedScroller
+          pages={dayGroups}
+          getKey={(group) => group.dateKey}
+          scrollerRef={pageScrollerRef}
           onScroll={handlePageScroll}
-          className="daily-page-scroller flex flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain"
-          aria-label="按日期翻页浏览"
+          ariaLabel="按日期翻页浏览"
+          sectionAriaLabel={(group) => `${group.label}，${group.count}条记录`}
+          renderPage={renderDayPage}
+        />
+      ) : tagSections.length > 0 ? (
+        <div
+          ref={tagScrollRef}
+          onScroll={handleTagScroll}
+          className="flex-1 overflow-y-auto px-2 py-2"
+          aria-label="按标签浏览"
         >
-          {dayGroups.map((group) => (
+          {tagSections.map((section) => (
             <section
-              key={group.dateKey}
-              className="h-full w-full flex-none snap-start overflow-y-auto px-2 py-2"
-              aria-label={`${group.label}，${group.count}条记录`}
+              key={section.tagKey}
+              id={`tag-section-${section.tagKey}`}
+              className="mb-5 rounded-2xl bg-white"
+              aria-label={`${section.tagLabel}，${section.count}条记录`}
             >
-              <div className="min-h-full rounded-2xl bg-white">
-                <div className="sticky top-0 z-10 mb-2 flex items-center justify-between bg-white/90 px-1 py-1.5 backdrop-blur-md">
-                  <div
-                    className="flex items-center gap-1.5 rounded-full border border-amber-900/20 px-3 py-1 text-[11px] font-medium text-amber-50 shadow-xs"
-                    style={{ backgroundColor: `rgb(69 26 3 / ${dailyPageDateHeaderBackgroundOpacity / 100})` }}
-                  >
-                    <Calendar className="h-3 w-3 text-amber-300" />
-                    <span>{group.label}</span>
-                    <span className="font-mono text-[10px] text-amber-200/70">({group.count}条)</span>
-                  </div>
-                  {group.isToday && (
-                    <div className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-700">
-                      <Sparkles className="h-2.5 w-2.5 text-amber-500" />
-                      此刻进行时
-                    </div>
+              <div className="sticky top-0 z-10 mb-2 flex items-center justify-between bg-white/90 px-1 py-1.5 backdrop-blur-md">
+                <div
+                  className="flex items-center gap-1.5 rounded-full border border-amber-900/20 px-3 py-1 text-[11px] font-medium text-amber-50 shadow-xs"
+                  style={{
+                    backgroundColor: `rgb(69 26 3 / ${dailyPageDateHeaderBackgroundOpacity / 100})`,
+                  }}
+                >
+                  {section.isUntagged ? (
+                    <Tag className="h-3 w-3 text-amber-300" />
+                  ) : (
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: section.color ?? '#9CA3AF' }}
+                    />
                   )}
+                  <span>{section.tagLabel}</span>
+                  <span className="font-mono text-[10px] text-amber-200/70">
+                    ({section.count}条)
+                  </span>
                 </div>
+              </div>
 
-                {group.roots.length > 0 ? (
-                  renderRecordTree(group)
-                ) : (
-                  <div className="flex flex-col items-center justify-center px-6 py-20 text-center text-gray-400">
-                    <Calendar className="mb-3 h-8 w-8 text-gray-300" />
-                    <p className="text-sm font-medium text-gray-500">
-                      {group.isToday ? '今天还没有记录' : `${group.label}没有记录`}
-                    </p>
-                    <p className="mt-1 text-xs">
-                      {group.isToday ? '从下方写下此刻的第一个想法' : '可以查看前后最近有记录的日期'}
-                    </p>
-                    {!group.isToday && (previousRecordedPage || nextRecordedPage) && (
-                      <div className="mt-4 flex items-center gap-2">
-                        {previousRecordedPage && (
-                          <button
-                            type="button"
-                            onClick={() => jumpToDate(previousRecordedPage.dateKey)}
-                            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-medium text-gray-600 shadow-xs"
-                          >
-                            ← {previousRecordedPage.label}
-                          </button>
-                        )}
-                        {nextRecordedPage && (
-                          <button
-                            type="button"
-                            onClick={() => jumpToDate(nextRecordedPage.dateKey)}
-                            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-medium text-gray-600 shadow-xs"
-                          >
-                            {nextRecordedPage.label} →
-                          </button>
+              {section.days.length > 0 ? (
+                section.days.map((day) => {
+                  const meta = getRelativeDayMeta(day.dateKey);
+                  return (
+                    <div key={day.dateKey} id={`tag-day-${section.tagKey}-${day.dateKey}`}>
+                      <div className="mb-1.5 flex items-center justify-between px-1">
+                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500">
+                          <Calendar className="h-3 w-3 text-gray-400" />
+                          <span>{meta.label}</span>
+                          <span className="font-mono text-[10px] text-gray-400">
+                            ({day.count}条)
+                          </span>
+                        </div>
+                        {meta.isToday && (
+                          <div className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-700">
+                            <Sparkles className="h-2.5 w-2.5 text-amber-500" />
+                            此刻进行时
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
+                      {renderTagTree(section, day)}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="px-3 py-6 text-center text-xs text-gray-400">
+                  这个标签还没有用过
+                </div>
+              )}
             </section>
           ))}
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-gray-400">
+          <Tag className="mb-3 h-8 w-8 text-gray-300" />
+          <p className="text-sm font-medium text-gray-500">还没有任何标签</p>
+          <p className="mt-1 text-xs">在记录上打标签后，这里会按标签汇总浏览</p>
         </div>
       )}
 
@@ -909,13 +1218,6 @@ export const RecordView = () => {
           className="absolute left-4 bottom-24 z-40 flex max-w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-slate-200 bg-slate-900 px-3.5 py-2.5 text-xs text-white shadow-xl"
         >
           <span className="min-w-0 truncate">{savedTodayHint}</span>
-          <button
-            type="button"
-            onClick={goToToday}
-            className="shrink-0 rounded-lg px-2.5 py-1 font-semibold text-amber-300 transition-colors hover:bg-white/10 hover:text-amber-200"
-          >
-            回到今天
-          </button>
         </div>
       )}
 

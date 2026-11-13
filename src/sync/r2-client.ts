@@ -4,7 +4,7 @@
  * - 零 Node.js 依赖，兼容纯 Web 与 Android Capacitor 移动端
  */
 
-import { R2Config, R2ClientLike } from './types';
+import { R2Config, R2ClientLike, RemoteListItem } from './types';
 
 function buildEndpoint(accountId: string): string {
   const id = accountId.trim();
@@ -251,8 +251,8 @@ export class R2Client implements R2ClientLike {
     return (await res.json()) as T;
   }
 
-  async list(prefix: string, signal?: AbortSignal): Promise<Array<{ key: string; lastModified: Date }>> {
-    const result: Array<{ key: string; lastModified: Date }> = [];
+  async list(prefix: string, signal?: AbortSignal): Promise<RemoteListItem[]> {
+    const result: RemoteListItem[] = [];
     let continuationToken: string | undefined;
     do {
       const params: Record<string, string> = { 'list-type': '2', prefix };

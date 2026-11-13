@@ -9,26 +9,30 @@ import {
   SyncProgressStatus,
   R2Config,
 } from './types';
-import { isR2Configured, loadR2Settings, loadTombstones, saveTombstoneRecord, removeTombstoneRecords } from './credentials';
+import { isR2ConfigUsable, loadR2Settings, loadTombstones, saveTombstoneRecord, removeTombstoneRecords } from './credentials';
 import { RecordItem, TagItem, ThreadItem, HomeLink, DeskEdgeRow } from '../types';
 
 let inMemoryTombstones: SyncTombstone[] = loadTombstones();
 let cachedSyncService: R2SyncService | null = null;
 let cachedSyncConfigKey = '';
 
+/** 同 id 覆蓋、新 id 追加；一次 merge 取代逐筆 setState + 全量持久化。 */
+function mergeById<T extends { id: string }>(current: T[], incoming: T[], prepend = false): T[] {
+  if (!incoming.length) return current;
+  const byId = new Map(incoming.map((item) => [item.id, item]));
+  const existingIds = new Set(current.map((item) => item.id));
+  const merged = current.map((item) => byId.get(item.id) ?? item);
+  const added = incoming.filter((item) => !existingIds.has(item.id));
+  return prepend ? [...added, ...merged] : [...merged, ...added];
+}
+
 export const flowRepository: FlowRepositoryLike = {
   getRecords: () => useFlowStore.getState().records,
   getRecord: (id: string) => useFlowStore.getState().records.find((r) => r.id === id),
-  saveRecord: (record: RecordItem) => {
-    useFlowStore.setState((state) => {
-      const exists = state.records.some((r) => r.id === record.id);
-      return {
-        records: exists
-          ? state.records.map((r) => (r.id === record.id ? record : r))
-          : [...state.records, record],
-      };
-    });
-  },
+  saveRecord: (record: RecordItem) =>
+    useFlowStore.setState((state) => ({ records: mergeById(state.records, [record]) })),
+  saveRecords: (records: RecordItem[]) =>
+    useFlowStore.setState((state) => ({ records: mergeById(state.records, records) })),
   deleteRecord: (id: string) => {
     const prev = useFlowStore.getState().records;
     useFlowStore.setState((state) => ({
@@ -39,16 +43,10 @@ export const flowRepository: FlowRepositoryLike = {
 
   getThreads: () => useFlowStore.getState().threads,
   getThread: (id: string) => useFlowStore.getState().threads.find((t) => t.id === id),
-  saveThread: (thread: ThreadItem) => {
-    useFlowStore.setState((state) => {
-      const exists = state.threads.some((t) => t.id === thread.id);
-      return {
-        threads: exists
-          ? state.threads.map((t) => (t.id === thread.id ? thread : t))
-          : [thread, ...state.threads],
-      };
-    });
-  },
+  saveThread: (thread: ThreadItem) =>
+    useFlowStore.setState((state) => ({ threads: mergeById(state.threads, [thread], true) })),
+  saveThreads: (threads: ThreadItem[]) =>
+    useFlowStore.setState((state) => ({ threads: mergeById(state.threads, threads, true) })),
   deleteThread: (id: string) => {
     const prev = useFlowStore.getState().threads;
     useFlowStore.setState((state) => ({
@@ -59,16 +57,10 @@ export const flowRepository: FlowRepositoryLike = {
 
   getTags: () => useFlowStore.getState().tags,
   getTag: (id: string) => useFlowStore.getState().tags.find((t) => t.id === id),
-  saveTag: (tag: TagItem) => {
-    useFlowStore.setState((state) => {
-      const exists = state.tags.some((t) => t.id === tag.id);
-      return {
-        tags: exists
-          ? state.tags.map((t) => (t.id === tag.id ? tag : t))
-          : [...state.tags, tag],
-      };
-    });
-  },
+  saveTag: (tag: TagItem) =>
+    useFlowStore.setState((state) => ({ tags: mergeById(state.tags, [tag]) })),
+  saveTags: (tags: TagItem[]) =>
+    useFlowStore.setState((state) => ({ tags: mergeById(state.tags, tags) })),
   deleteTag: (id: string) => {
     const prev = useFlowStore.getState().tags;
     useFlowStore.setState((state) => ({
@@ -79,16 +71,10 @@ export const flowRepository: FlowRepositoryLike = {
 
   getDeskRows: () => useFlowStore.getState().deskRows,
   getDeskRow: (id: string) => useFlowStore.getState().deskRows.find((row) => row.id === id),
-  saveDeskRow: (row: DeskEdgeRow) => {
-    useFlowStore.setState((state) => {
-      const exists = state.deskRows.some((r) => r.id === row.id);
-      return {
-        deskRows: exists
-          ? state.deskRows.map((r) => (r.id === row.id ? row : r))
-          : [...state.deskRows, row],
-      };
-    });
-  },
+  saveDeskRow: (row: DeskEdgeRow) =>
+    useFlowStore.setState((state) => ({ deskRows: mergeById(state.deskRows, [row]) })),
+  saveDeskRows: (rows: DeskEdgeRow[]) =>
+    useFlowStore.setState((state) => ({ deskRows: mergeById(state.deskRows, rows) })),
   deleteDeskRow: (id: string) => {
     const prev = useFlowStore.getState().deskRows;
     useFlowStore.setState((state) => ({
@@ -129,20 +115,25 @@ function r2SyncConfigKey(config: R2Config): string {
   ]);
 }
 
+/** 远端元数据缓存的分区键；不含密钥，仅用于配置切换时失效旧缓存。 */
+function r2MetaNamespace(config: R2Config): string {
+  return [config.accountId, config.bucketName, config.endpoint ?? '', config.region ?? ''].join('|');
+}
+
 export function createR2SyncService(): R2SyncService | null {
-  if (!isR2Configured()) {
+  const config = loadR2Settings();
+  if (!isR2ConfigUsable(config)) {
     cachedSyncService = null;
     cachedSyncConfigKey = '';
     return null;
   }
-  const config = loadR2Settings();
   const configKey = r2SyncConfigKey(config);
   if (cachedSyncService && cachedSyncConfigKey === configKey) {
     return cachedSyncService;
   }
   try {
     const client = new R2Client(config);
-    cachedSyncService = new R2SyncService(client, flowRepository);
+    cachedSyncService = new R2SyncService(client, flowRepository, r2MetaNamespace(config));
     cachedSyncConfigKey = configKey;
     return cachedSyncService;
   } catch {
@@ -254,10 +245,13 @@ export async function triggerR2Sync(options: SyncOptions = {}): Promise<SyncRepo
 }
 
 export async function testR2Connection(): Promise<{ ok: boolean; message: string }> {
-  if (!isR2Configured()) {
-    return { ok: false, message: '请先完整配置 Account ID / Access Key / Secret Key / Bucket Name' };
-  }
   const config = loadR2Settings();
+  if (!isR2ConfigUsable(config)) {
+    return {
+      ok: false,
+      message: '请先完整配置同步：Account ID／Access Key／Secret／Bucket',
+    };
+  }
   try {
     const client = new R2Client(config);
     return client.testConnection();

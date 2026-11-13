@@ -107,7 +107,25 @@ export interface EnrichedRecordItem extends RecordItem {
   thread?: ThreadItem;
   tag?: TagItem;
   children?: EnrichedRecordItem[];
+  parentRecord?: EnrichedRecordItem;
+  quotedRecord?: EnrichedRecordItem;
+  downstreamQuotes?: EnrichedRecordItem[];
+  progress?: { total: number; done: number };
+}
+
+/**
+ * buildRecordBranches 產生的展示節點：關聯欄位在建立時填好，
+ * 必填可讓直接用一般記錄渲染的行組件在編譯期就暴露問題。
+ */
+export interface RecordTreeNode extends EnrichedRecordItem {
+  parentRecord: EnrichedRecordItem | undefined;
+  quotedRecord: EnrichedRecordItem | undefined;
+  downstreamQuotes: EnrichedRecordItem[];
+  children?: RecordTreeNode[];
 }
 
 // 视图切换类型
 export type ActiveTab = 'record' | 'review' | 'matrix' | 'value-matrix' | 'thread-detail' | 'desk';
+
+/** 记录页的三种浏览模式：时间流 / 按日期翻页 / 按标签翻页。 */
+export type RecordViewMode = 'timeline' | 'daily-pages' | 'tag-pages';

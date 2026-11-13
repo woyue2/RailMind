@@ -4,7 +4,7 @@ import { useFlowStore } from '../store/useFlowStore';
 import { EisenhowerQuadrant, RecordItem } from '../types';
 import { formatShortDateTime, getLocalDateKey } from '../utils/dateUtils';
 import { EISENHOWER_QUADRANTS, EisenhowerQuadrantModal } from '../components/modals/EisenhowerQuadrantModal';
-import { revealElement } from '../utils/scrollUtils';
+import { flashRecord } from '../utils/scrollUtils';
 
 export function EisenhowerMatrixView() {
   const records = useFlowStore((state) => state.records);
@@ -23,15 +23,7 @@ export function EisenhowerMatrixView() {
 
   const jumpToRecord = (record: RecordItem) => {
     openDateRecord(getLocalDateKey(record.created_at));
-    window.setTimeout(() => {
-      useFlowStore.getState().setHighlightRecordId(record.id);
-      revealElement(document.getElementById(`record-${record.id}`));
-      window.setTimeout(() => {
-        if (useFlowStore.getState().highlightRecordId === record.id) {
-          useFlowStore.getState().setHighlightRecordId(null);
-        }
-      }, 1600);
-    }, 250);
+    flashRecord(record.id, 250);
   };
 
   return (
@@ -39,7 +31,7 @@ export function EisenhowerMatrixView() {
       <header className="shrink-0 border-b border-gray-200 bg-white px-3 py-3 sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <button type="button" onClick={() => setActiveTab('record')} className="rounded-full p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="返回記錄頁" aria-label="返回記錄頁">
+            <button type="button" onClick={() => setActiveTab('review')} className="rounded-full p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="返回回顧頁" aria-label="返回回顧頁">
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div className="min-w-0">

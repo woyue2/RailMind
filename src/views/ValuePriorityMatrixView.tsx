@@ -5,7 +5,7 @@ import { RecordItem } from '../types';
 import { formatShortDateTime, getLocalDateKey } from '../utils/dateUtils';
 import { VALUE_QUADRANTS } from '../utils/valuePriority';
 import { ValuePriorityWizard } from '../components/modals/ValuePriorityWizard';
-import { revealElement } from '../utils/scrollUtils';
+import { flashRecord } from '../utils/scrollUtils';
 
 export function ValuePriorityMatrixView() {
   const records = useFlowStore((state) => state.records);
@@ -28,11 +28,7 @@ export function ValuePriorityMatrixView() {
 
   const jumpToRecord = (record: RecordItem) => {
     openDateRecord(getLocalDateKey(record.created_at));
-    window.setTimeout(() => {
-      useFlowStore.getState().setHighlightRecordId(record.id);
-      revealElement(document.getElementById(`record-${record.id}`));
-      window.setTimeout(() => useFlowStore.getState().setHighlightRecordId(null), 1600);
-    }, 250);
+    flashRecord(record.id, 250);
   };
 
   return (
@@ -40,7 +36,7 @@ export function ValuePriorityMatrixView() {
       <header className="shrink-0 border-b border-gray-200 bg-white px-3 py-3 sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <button type="button" onClick={() => setActiveTab('record')} className="rounded-full p-1.5 text-gray-500 hover:bg-gray-100" aria-label="返回記錄頁"><ArrowLeft className="h-5 w-5" /></button>
+            <button type="button" onClick={() => setActiveTab('review')} className="rounded-full p-1.5 text-gray-500 hover:bg-gray-100" aria-label="返回回顧頁"><ArrowLeft className="h-5 w-5" /></button>
             <div className="min-w-0"><h2 className="flex items-center gap-1.5 text-base font-semibold text-gray-900"><Gem className="h-4 w-4 text-violet-600" />價值 × 晚做損失</h2><p className="truncate text-[11px] text-gray-500">價值決定要不要做，晚做損失決定何時做</p></div>
           </div>
           <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700">{classified.length} 項</span>

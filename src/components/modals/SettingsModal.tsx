@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, CheckCircle, AlertCircle, RefreshCw, X, Shield, HardDrive } from 'lucide-react';
+import { Settings, CheckCircle, AlertCircle, RefreshCw, X, HardDrive } from 'lucide-react';
 import { useFlowStore } from '../../store/useFlowStore';
 import {
   loadR2Settings,
   saveR2Settings,
-  isR2Configured,
   defaultR2Config,
+  isR2ConfigUsable,
 } from '../../sync/credentials';
 import { testR2Connection, triggerR2Sync } from '../../sync';
 import { R2Config, SyncReport } from '../../sync/types';
@@ -40,6 +40,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const configured = isR2ConfigUsable(settings);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,70 +175,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             </label>
           </div>
 
-          {/* R2 Credentials Form */}
+          {/* Sync Credentials Form */}
           <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between text-gray-700 font-medium">
-              <span>Cloudflare R2 凭据配置</span>
-              <span className="text-[10.5px] text-gray-400 flex items-center gap-1">
-                <Shield className="w-3 h-3 text-emerald-500" />
-                本地加密签名，零中转
-              </span>
-            </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Account ID (Cloudflare 账户 ID)</label>
+                  <input
+                    type="text"
+                    value={settings.accountId}
+                    onChange={(e) => setSettings({ ...settings, accountId: e.target.value })}
+                    placeholder="例如: a1b2c3d4e5f6..."
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-gray-500 mb-1">Account ID (Cloudflare 账户 ID)</label>
-              <input
-                type="text"
-                value={settings.accountId}
-                onChange={(e) => setSettings({ ...settings, accountId: e.target.value })}
-                placeholder="例如: a1b2c3d4e5f6..."
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
-              />
-            </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">R2 Bucket Name (存储桶名称)</label>
+                  <input
+                    type="text"
+                    value={settings.bucketName}
+                    onChange={(e) => setSettings({ ...settings, bucketName: e.target.value })}
+                    placeholder="例如: flow-backup"
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-gray-500 mb-1">R2 Bucket Name (存储桶名称)</label>
-              <input
-                type="text"
-                value={settings.bucketName}
-                onChange={(e) => setSettings({ ...settings, bucketName: e.target.value })}
-                placeholder="例如: flow-backup"
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
-              />
-            </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Access Key ID</label>
+                  <input
+                    type="text"
+                    value={settings.accessKeyId}
+                    onChange={(e) => setSettings({ ...settings, accessKeyId: e.target.value })}
+                    placeholder="R2 API Token Access Key ID"
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-gray-500 mb-1">Access Key ID</label>
-              <input
-                type="text"
-                value={settings.accessKeyId}
-                onChange={(e) => setSettings({ ...settings, accessKeyId: e.target.value })}
-                placeholder="R2 API Token Access Key ID"
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
-              />
-            </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Secret Access Key</label>
+                  <input
+                    type="password"
+                    value={settings.secretAccessKey}
+                    onChange={(e) => setSettings({ ...settings, secretAccessKey: e.target.value })}
+                    placeholder="••••••••••••••••••••••••••••••••"
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-gray-500 mb-1">Secret Access Key</label>
-              <input
-                type="password"
-                value={settings.secretAccessKey}
-                onChange={(e) => setSettings({ ...settings, secretAccessKey: e.target.value })}
-                placeholder="••••••••••••••••••••••••••••••••"
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-400 mb-1">自定义 Endpoint（可选，留空则自动根据 Account ID 生成）</label>
-              <input
-                type="text"
-                value={settings.endpoint || ''}
-                onChange={(e) => setSettings({ ...settings, endpoint: e.target.value })}
-                placeholder="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono text-gray-500"
-              />
-            </div>
+                <div>
+                  <label className="block text-gray-400 mb-1">自定义 Endpoint（可选，留空则自动根据 Account ID 生成）</label>
+                  <input
+                    type="text"
+                    value={settings.endpoint || ''}
+                    onChange={(e) => setSettings({ ...settings, endpoint: e.target.value })}
+                    placeholder="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono text-gray-500"
+                  />
+                </div>
           </div>
 
           {/* Test & Sync Actions Bar */}
@@ -254,7 +248,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             <button
               type="button"
               onClick={handleManualSync}
-              disabled={syncing || !isR2Configured()}
+              disabled={syncing || !configured}
               className="px-3.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
             >
               {syncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" /> : <RefreshCw className="w-3.5 h-3.5" />}

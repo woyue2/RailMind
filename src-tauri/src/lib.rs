@@ -5,6 +5,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
+use tauri_plugin_log::{Target, TargetKind};
 
 #[cfg(windows)]
 use windows_sys::Win32::{
@@ -65,7 +66,18 @@ fn toggle_window_pin(hwnd: isize, is_pinned: &AtomicBool) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir { file_name: None }),
+                    Target::new(TargetKind::Webview),
+                ])
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
         .setup(|app| {
+            log::info!("RailMind Desktop starting up...");
             let window = app.get_webview_window("main").expect("main window not found");
 
             #[cfg(windows)]
