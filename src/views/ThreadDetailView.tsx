@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Sparkles, ExternalLink } from 'lucide-react';
 import { useFlowStore } from '../store/useFlowStore';
-import { formatSimpleDate, formatTime, calculateDaysBetween } from '../utils/dateUtils';
-import { parseISO, differenceInDays, format } from 'date-fns';
+import { formatSimpleDate, formatTime, calculateDaysBetween, getLocalDateKey } from '../utils/dateUtils';
 import { ImageViewerModal } from '../components/modals/ImageViewerModal';
 import { AudioPlayerPill } from '../components/common/AudioPlayerPill';
 
@@ -10,8 +9,10 @@ export const ThreadDetailView: React.FC = () => {
   const selectedThreadId = useFlowStore((s) => s.selectedThreadId);
   const threads = useFlowStore((s) => s.threads);
   const getThreadRecords = useFlowStore((s) => s.getThreadRecords);
-  const setActiveTab = useFlowStore((s) => s.setActiveTab);
+  const backFromThreadDetail = useFlowStore((s) => s.backFromThreadDetail);
+  const threadDetailReturnContext = useFlowStore((s) => s.threadDetailReturnContext);
   const openDateRecordFromThread = useFlowStore((s) => s.openDateRecordFromThread);
+  const returnLabel = threadDetailReturnContext?.tab === 'record' ? '记录页' : '回顾页';
 
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerImages, setViewerImages] = useState<string[]>([]);
@@ -32,9 +33,7 @@ export const ThreadDetailView: React.FC = () => {
   // Calculate total span in days
   const spanDays = useMemo(() => {
     if (records.length <= 1) return 1;
-    const firstDate = parseISO(records[0].created_at);
-    const lastDate = parseISO(records[records.length - 1].created_at);
-    const diff = Math.abs(differenceInDays(lastDate, firstDate));
+    const diff = calculateDaysBetween(records[0].created_at, records[records.length - 1].created_at);
     return diff === 0 ? 1 : diff;
   }, [records]);
 
@@ -43,10 +42,10 @@ export const ThreadDetailView: React.FC = () => {
       <div className="flex flex-col h-full items-center justify-center p-6 bg-white">
         <p className="text-sm text-gray-500 mb-4">未找到该思维线</p>
         <button
-          onClick={() => setActiveTab('review')}
+          onClick={backFromThreadDetail}
           className="px-4 py-2 text-xs font-medium text-white bg-gray-900 rounded-lg"
         >
-          返回回顾页
+          返回{returnLabel}
         </button>
       </div>
     );
@@ -54,7 +53,8 @@ export const ThreadDetailView: React.FC = () => {
 
   const handleJumpToDateRecord = (isoDate: string) => {
     try {
-      const dateKey = format(parseISO(isoDate), 'yyyy-MM-dd');
+      const dateKey = getLocalDateKey(isoDate);
+      if (!dateKey) return;
       openDateRecordFromThread(dateKey, thread.id);
     } catch {
       // ignore
@@ -67,9 +67,9 @@ export const ThreadDetailView: React.FC = () => {
       <div className="px-4 py-3.5 border-b border-gray-100 bg-white sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setActiveTab('review')}
+            onClick={backFromThreadDetail}
             className="p-1 -ml-1 text-gray-500 hover:text-gray-800 rounded-full hover:bg-gray-100 transition-colors"
-            title="返回回顾页"
+            title={`返回${returnLabel}`}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>

@@ -29,3 +29,11 @@ android/.gradle/
 android/build/
 *.tsbuildinfo
 
+
+# Trae / IDE cache
+.build-cache/
+.trae/
+.workbuddy/
+
+# Local dev data bridge
+.local-data-sync.json

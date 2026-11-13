@@ -8,7 +8,12 @@ import { AudioPlayerPill } from '../../components/common/AudioPlayerPill';
 
 const MAX_RECORDING_SECONDS = 60;
 
-export const RecordInputBar: React.FC = () => {
+interface RecordInputBarProps {
+  writesToToday?: boolean;
+  onRecordCreated?: (id: string) => void;
+}
+
+export const RecordInputBar: React.FC<RecordInputBarProps> = ({ writesToToday = false, onRecordCreated }) => {
   const [inputText, setInputText] = useState('');
   const [pendingImgs, setPendingImgs] = useState<string[]>([]);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
@@ -137,17 +142,17 @@ export const RecordInputBar: React.FC = () => {
 
   // Handle image file selection
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) {
+    const fileList = e.target.files ? Array.from(e.target.files) : [];
+    if (!fileList || fileList.length === 0) {
       // Android WebView 下 display:none 文件框选择后可能返回空，此时仍给出反馈
       showImageTip('未读取到所选图片，请重试', 'warning');
       return;
     }
 
     setIsProcessingImg(true);
-    setImgTip({ message: `正在处理 ${files.length} 张图片…`, tone: 'info' });
+    setImgTip({ message: `正在处理 ${fileList.length} 张图片…`, tone: 'info' });
     try {
-      const { compressed, error } = await processImageFiles(files, pendingImgs.length);
+      const { compressed, error } = await processImageFiles(fileList, pendingImgs.length);
       if (compressed.length > 0) {
         setPendingImgs((prev) => [...prev, ...compressed].slice(0, MAX_NOTE_IMAGES));
         showImageTip(
@@ -187,6 +192,8 @@ export const RecordInputBar: React.FC = () => {
       imgs: hasImgs ? pendingImgs : undefined,
       audio: pendingAudio || undefined,
     });
+    const createdRecord = useFlowStore.getState().records.at(-1);
+    if (createdRecord) onRecordCreated?.(createdRecord.id);
 
     setInputText('');
     setPendingImgs([]);
@@ -201,18 +208,24 @@ export const RecordInputBar: React.FC = () => {
 
   return (
     <div className="record-input-bar border-t border-gray-100 bg-white/95 backdrop-blur-md px-3 pt-2 pb-3">
+      {writesToToday && (
+        <div className="mb-1.5 flex items-center justify-center gap-1 text-[10px] font-medium text-amber-700">
+          <Sparkles className="h-3 w-3" />
+          <span>正在浏览历史 · 新想法将记录到今天</span>
+        </div>
+      )}
       {/* 1. Branching State Alert (if active) */}
       {parentRecord && (
         <div className="mb-2 px-2.5 py-1.5 bg-amber-50/90 border border-amber-200/80 rounded-lg flex items-center justify-between text-xs text-amber-900 animate-in fade-in duration-150">
           <div className="flex items-center gap-1.5 truncate pr-2">
             <GitBranch className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
-            <span className="text-[11px] font-medium text-amber-800">分支于:</span>
+            <span className="text-[11px] font-medium text-amber-800 shrink-0">从这里续写:</span>
             <span className="truncate text-amber-700">"{parentRecord.text}"</span>
           </div>
           <button
             onClick={() => setActiveBranchParentId(null)}
             className="text-amber-700 hover:text-amber-900 p-0.5"
-            title="取消分支模式"
+            title="取消续写"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -462,7 +475,7 @@ export const RecordInputBar: React.FC = () => {
               onChange={(e) => setInputText(e.target.value)}
               placeholder={
                 activeBranchParentId
-                  ? '输入分支子想法...'
+                  ? '继续这个想法...'
                   : activeQuoteRecordId
                   ? '输入回应或引用想法...'
                   : quickSelectedThreadId
@@ -503,4 +516,3 @@ export const RecordInputBar: React.FC = () => {
     </div>
   );
 };
-

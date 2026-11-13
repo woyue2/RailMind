@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "RailMind 应用架构",
+    "locale": "zh-CN",
+    "output": "railmind-architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [960, 510],
+    "views": [
+      {
+        "id": "main-path",
+        "label": "主数据路径",
+        "focus": ["user", "app", "views", "store", "sync", "r2"],
+        "note": "用户操作经功能视图与 Zustand Store，最终增量同步到 Cloudflare R2。"
+      },
+      {
+        "id": "local",
+        "label": "本地存储",
+        "focus": ["store", "localdb", "attachments"],
+        "note": "Zustand persist 自动落盘，图片 / 音频附件经 Filesystem 与 IndexedDB 本地存取。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "用户",
+      "sublabel": "手机端",
+      "pos": [40, 300],
+      "size": [100, 56]
+    },
+    {
+      "id": "android",
+      "type": "external",
+      "label": "Android 平台",
+      "sublabel": "WebView · CapacitorHttp",
+      "pos": [40, 420],
+      "size": [130, 56]
+    },
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "RailMind App",
+      "sublabel": "React 18 + Capacitor",
+      "pos": [210, 290],
+      "size": [140, 64]
+    },
+    {
+      "id": "views",
+      "type": "frontend",
+      "label": "功能视图",
+      "sublabel": "每日记录 / 回顾 / 象限 / 思维线 / 桌沿",
+      "pos": [420, 100],
+      "size": [150, 72]
+    },
+    {
+      "id": "store",
+      "type": "frontend",
+      "label": "Zustand Store",
+      "sublabel": "records · tags · threads · deskRows",
+      "pos": [420, 250],
+      "size": [150, 72]
+    },
+    {
+      "id": "localdb",
+      "type": "database",
+      "label": "本地持久化",
+      "sublabel": "localStorage · persist 落盘",
+      "pos": [420, 410],
+      "size": [150, 64]
+    },
+    {
+      "id": "attachments",
+      "type": "database",
+      "label": "附件存储",
+      "sublabel": "Filesystem + IndexedDB blobs",
+      "pos": [610, 104],
+      "size": [150, 64]
+    },
+    {
+      "id": "sync",
+      "type": "backend",
+      "label": "R2 同步服务",
+      "sublabel": "flowRepository · R2Client",
+      "pos": [610, 250],
+      "size": [150, 72]
+    },
+    {
+      "id": "r2",
+      "type": "cloud",
+      "label": "Cloudflare R2",
+      "sublabel": "远程对象存储",
+      "pos": [810, 254],
+      "size": [130, 64]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "RailMind 移动应用 · src/ (TypeScript)",
+      "wraps": ["app", "views", "store", "localdb", "sync", "attachments"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "user-to-app",
+      "from": "user",
+      "to": "app",
+      "label": "浏览 · 操作",
+      "variant": "emphasis",
+      "labelAt": [174, 296]
+    },
+    {
+      "id": "app-to-views",
+      "from": "app",
+      "to": "views",
+      "label": "渲染功能视图"
+    },
+    {
+      "id": "views-to-store",
+      "from": "views",
+      "to": "store",
+      "label": "读写业务数据",
+      "variant": "emphasis",
+      "labelAt": [540, 186]
+    },
+    {
+      "id": "store-to-localdb",
+      "from": "store",
+      "to": "localdb",
+      "label": "persist 自动落盘",
+      "labelAt": [540, 336]
+    },
+    {
+      "id": "store-to-sync",
+      "from": "store",
+      "to": "sync",
+      "label": "变更触发自动同步",
+      "labelAt": [660, 336]
+    },
+    {
+      "id": "sync-to-r2",
+      "from": "sync",
+      "to": "r2",
+      "label": "增量 push / pull",
+      "variant": "emphasis",
+      "labelAt": [895, 336]
+    },
+    {
+      "id": "views-to-attachments",
+      "from": "views",
+      "to": "attachments",
+      "label": "图片 / 音频附件",
+      "labelAt": [590, 186]
+    },
+    {
+      "id": "app-to-android",
+      "from": "app",
+      "to": "android",
+      "label": "Capacitor 原生桥接",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "主路径",
+      "items": [
+        "用户操作 → 功能视图 → Zustand Store → R2 同步 → Cloudflare R2",
+        "Store 变更自动触发增量同步，静默运行"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "数据与本地存储",
+      "items": [
+        "records · tags · threads · deskRows · HomeLink · Tombstone",
+        "persist 中间件自动落盘；附件经 Filesystem / IndexedDB 本地保存"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "边界与平台",
+      "items": [
+        "R2 凭证仅在 sync 模块内持有",
+        "Capacitor 打包 Android，CapacitorHttp 桥接网络请求"
+      ]
+    }
+  ]
+}

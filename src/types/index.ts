@@ -5,6 +5,29 @@ export interface AudioAttachment {
   format?: string; // 'audio/webm' | 'audio/mp4'
 }
 
+export type EisenhowerQuadrant =
+  | 'important-urgent'
+  | 'important-not-urgent'
+  | 'not-important-urgent'
+  | 'not-important-not-urgent';
+
+export type ValueQuadrant =
+  | 'action'
+  | 'investment'
+  | 'firefighting'
+  | 'eliminate';
+
+export interface ValuePriorityProfile {
+  quadrant?: ValueQuadrant;
+  is_routine: boolean;
+  high_value?: boolean;
+  high_delay_loss?: boolean;
+  high_leverage?: boolean;
+  unlocks_work?: boolean;
+  is_container?: boolean;
+  reason?: string;
+}
+
 // Record 数据模型
 export interface RecordItem {
   id: string;
@@ -21,6 +44,10 @@ export interface RecordItem {
   audio?: AudioAttachment | null; // 附带的语音录音便签
   is_pinned?: boolean; // 是否置顶为浮动气泡便签
   pinned_at?: string | null; // 置顶时间戳 (ISO 8601 string)
+  is_completed?: boolean; // 是否已完成（兼容旧数据可缺省）
+  eisenhower_quadrant?: EisenhowerQuadrant | null; // 艾森豪矩陣象限；空值表示未加入
+  value_priority?: ValuePriorityProfile | null; // 價值 × 晚做損失新版四象限；與舊矩陣獨立
+  desk_entry_id?: string | null; // 若來自桌邊抽屜 entry，此處記 entry id（單向綁定：一條 record 只屬於一個 entry）
 }
 
 // Tag 标签数据模型
@@ -28,6 +55,8 @@ export interface TagItem {
   id: string;
   name: string;
   color: string; // hex color (例如 '#F87171')
+  created_at?: string;
+  updated_at?: string; // 同步比较用的修订时间，与旧数据保持兼容
 }
 
 // Thread 思维线数据模型
@@ -44,12 +73,59 @@ export interface HomeLink {
   updatedAt: string;
 }
 
+export interface DeskEntry {
+  id: string;
+  text: string;
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601
+  record_id?: string | null; // 同步到時間流的 record id；若用戶從主時間流收進來也會有此字段
+}
+
+export interface DeskDrawer {
+  id: string;
+  title: string;
+  entries: DeskEntry[];
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601 last content or title edit
+  state_updated_at?: string; // ISO 8601 last expand/dim UI state change
+  is_dimmed?: boolean; // tick 按下時讓抽屜變暗
+  expanded_override?: boolean | null;
+  expanded_override_date?: string | null; // YYYY-MM-DD
+}
+
+export interface DeskEdgeRow {
+  id: string;
+  title: string;
+  drawers: DeskDrawer[];
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601 last title/drawer/content edit
+  state_updated_at?: string; // ISO 8601 last expand/dim UI state change
+}
+
 // 包含关联解析的展示记录
 export interface EnrichedRecordItem extends RecordItem {
   thread?: ThreadItem;
   tag?: TagItem;
   children?: EnrichedRecordItem[];
+  parentRecord?: EnrichedRecordItem;
+  quotedRecord?: EnrichedRecordItem;
+  downstreamQuotes?: EnrichedRecordItem[];
+  progress?: { total: number; done: number };
+}
+
+/**
+ * buildRecordBranches 產生的展示節點：關聯欄位在建立時填好，
+ * 必填可讓直接用一般記錄渲染的行組件在編譯期就暴露問題。
+ */
+export interface RecordTreeNode extends EnrichedRecordItem {
+  parentRecord: EnrichedRecordItem | undefined;
+  quotedRecord: EnrichedRecordItem | undefined;
+  downstreamQuotes: EnrichedRecordItem[];
+  children?: RecordTreeNode[];
 }
 
 // 视图切换类型
-export type ActiveTab = 'record' | 'review' | 'thread-detail' | 'widgets';
+export type ActiveTab = 'record' | 'review' | 'matrix' | 'value-matrix' | 'thread-detail' | 'desk';
+
+/** 记录页的三种浏览模式：时间流 / 按日期翻页 / 按标签翻页。 */
+export type RecordViewMode = 'timeline' | 'daily-pages' | 'tag-pages';

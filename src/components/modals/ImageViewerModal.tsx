@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useSystemBack } from '../../hooks/useSystemBack';
 
 interface ImageViewerModalProps {
   isOpen: boolean;
@@ -15,6 +16,8 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
   onClose,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+
+  useSystemBack(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {

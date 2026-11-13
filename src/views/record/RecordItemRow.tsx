@@ -7,58 +7,86 @@ import {
   Check,
   Quote,
   Palette,
-  Sparkles,
   ArrowUpRightFromSquare,
   Camera,
   Loader2,
   Mic,
-  Volume2,
   MoreHorizontal,
   ChevronUp,
   Pin,
+  LayoutGrid,
+  Gem,
+  FolderOpen,
+  FolderPlus,
+  Tag,
 } from 'lucide-react';
-import { EnrichedRecordItem, RecordItem } from '../../types';
-import { formatTime, formatShortDateTime, getLocalDateKey } from '../../utils/dateUtils';
+import { RecordTreeNode, RecordItem } from '../../types';
+import { formatTime, formatShortDateTime, formatSimpleDate, getLocalDateKey } from '../../utils/dateUtils';
 import { processImageFiles, MAX_NOTE_IMAGES } from '../../utils/imageUtils';
 import { useFlowStore } from '../../store/useFlowStore';
 import { ConfirmDeleteModal } from '../../components/modals/ConfirmDeleteModal';
 import { ImageViewerModal } from '../../components/modals/ImageViewerModal';
 import { AudioPlayerPill } from '../../components/common/AudioPlayerPill';
 import { AudioRecorderModal } from '../../components/modals/AudioRecorderModal';
+import { useSystemBack } from '../../hooks/useSystemBack';
+import { EisenhowerQuadrantModal } from '../../components/modals/EisenhowerQuadrantModal';
+import { ValuePriorityWizard } from '../../components/modals/ValuePriorityWizard';
+import { flashRecord } from '../../utils/scrollUtils';
+import type { RecordPageScope } from '../../utils/recordPage';
+import { childPreviewPath } from '../../utils/recordPage';
 
 interface RecordItemRowProps {
-  item: EnrichedRecordItem;
+  item: RecordTreeNode;
   level: number;
   isLastChild?: boolean;
+  displayDate?: string;
+  previewPath?: string;
+  /** 目前頁面的界定（日期翻頁不傳，標籤翻頁傳 key + keyOf）。 */
+  page?: RecordPageScope;
+  /** 覆寫「跳到來源記錄」的行為（標籤翻頁需要先切頁）。 */
+  onJumpToRecord?: (record: RecordItem) => void;
   onOpenThreadPicker: (recordId: string, currentText: string) => void;
   onOpenTagPicker: (recordId: string, currentTagId: string | null) => void;
+  onOpenDeskPicker?: (recordId: string) => void;
+  onCreateDrawerFromRecord?: (recordId: string) => void;
+  deskDrawerTitle?: string;
+  onRecordsDeleted?: (records: RecordItem[]) => void;
+  checklist?: boolean;
 }
 
 export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   item,
   level,
   isLastChild = false,
+  displayDate = getLocalDateKey(item.created_at),
+  previewPath,
+  page,
+  onJumpToRecord,
   onOpenThreadPicker,
   onOpenTagPicker,
+  onOpenDeskPicker,
+  onCreateDrawerFromRecord,
+  deskDrawerTitle,
+  onRecordsDeleted,
+  checklist = false,
 }) => {
   const activeBranchParentId = useFlowStore((s) => s.activeBranchParentId);
   const setActiveBranchParentId = useFlowStore((s) => s.setActiveBranchParentId);
   const activeQuoteRecordId = useFlowStore((s) => s.activeQuoteRecordId);
   const setActiveQuoteRecordId = useFlowStore((s) => s.setActiveQuoteRecordId);
   const highlightRecordId = useFlowStore((s) => s.highlightRecordId);
-  const setHighlightRecordId = useFlowStore((s) => s.setHighlightRecordId);
-  const openDateRecord = useFlowStore((s) => s.openDateRecord);
+  const setSelectedDate = useFlowStore((s) => s.setSelectedDate);
   const openThreadDetail = useFlowStore((s) => s.openThreadDetail);
   const deleteRecord = useFlowStore((s) => s.deleteRecord);
   const updateRecord = useFlowStore((s) => s.updateRecord);
   const togglePinRecord = useFlowStore((s) => s.togglePinRecord);
+  const toggleCompletedRecord = useFlowStore((s) => s.toggleCompletedRecord);
   const quickSelectedThreadId = useFlowStore((s) => s.quickSelectedThreadId);
   const setQuickSelectedThreadId = useFlowStore((s) => s.setQuickSelectedThreadId);
-  const threads = useFlowStore((s) => s.threads);
-  const records = useFlowStore((s) => s.records);
 
   // In-place text editing state
   const [isEditing, setIsEditing] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [editText, setEditText] = useState(item.text);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -80,6 +108,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Note custom background color popover state
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [menuPlacement, setMenuPlacement] = useState<'down' | 'up'>('down');
 
   // Audio recorder modal state for existing record
   const [audioModalOpen, setAudioModalOpen] = useState(false);
@@ -89,6 +118,15 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Popover state for multiple downstream references
   const [showDownstreamPopover, setShowDownstreamPopover] = useState(false);
+  const [quadrantModalOpen, setQuadrantModalOpen] = useState(false);
+  const [valueWizardOpen, setValueWizardOpen] = useState(false);
+
+  useSystemBack(showColorPicker, () => setShowColorPicker(false));
+  useSystemBack(isActionsExpanded, () => setIsActionsExpanded(false));
+
+  useEffect(() => {
+    if (!isActionsExpanded) setShowColorPicker(false);
+  }, [isActionsExpanded]);
 
   // Keep editText in sync when item.text changes externally
   useEffect(() => {
@@ -107,49 +145,36 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
   const isQuotingThis = activeQuoteRecordId === item.id;
   const isHighlighted = highlightRecordId === item.id;
   const hasChildren = item.children && item.children.length > 0;
-  const activeQuickThread = quickSelectedThreadId
-    ? threads.find((t) => t.id === quickSelectedThreadId)
-    : null;
+  // 分組（有子步驟）不顯示自己的勾選框，只顯示子樹的完成進度。
+  const groupTotal = hasChildren ? item.progress?.total ?? 0 : 0;
+  const groupDone = hasChildren ? item.progress?.done ?? 0 : 0;
+  const childChecklist = checklist || (item.children?.length ?? 0) >= 2;
 
   // Upstream quoted record
-  const quotedRecord = item.quote_id ? records.find((r) => r.id === item.quote_id) : null;
-  // 跨日分支的子记录: level===0 说明父不在同一天树中, 分支关系已退化为引用
-  const parentRecord = item.parent_id ? records.find((r) => r.id === item.parent_id) : null;
-  const isCrossDayBranchChild = level === 0 && !!item.parent_id;
+  const quotedRecord = item.quotedRecord ?? null;
+  // Only the canonical daily occurrence needs a cross-day source card.
+  const parentRecord = item.parentRecord ?? null;
+  const isCrossDayBranchChild = !previewPath && !!item.parent_id &&
+    (!parentRecord || getLocalDateKey(parentRecord.created_at) !== getLocalDateKey(item.created_at));
   const showUpstreamCard = !!item.quote_id || isCrossDayBranchChild;
   const upstreamRecord = item.quote_id ? quotedRecord : parentRecord;
-  // 源记录引用色: 引用路径取被引记录的 color；跨日分支退化取父记录的 color。
+  const UpstreamIcon = item.quote_id ? Quote : GitBranch;
+  // 来源色由引用记录或分支父记录提供。
   // 谨记不 fallback 到自身 color，否则子记录会取错自己的色，导致同源不同色。
   const upstreamColor =
     (item.quote_id ? quotedRecord?.quote_color : parentRecord?.quote_color) || null;
 
   // Downstream records that quote this record
-  const downstreamQuotes = records.filter((r) => r.quote_id === item.id);
+  const downstreamQuotes = item.downstreamQuotes ?? [];
 
   // Bidirectional Jump handler
   const handleJumpToRecord = (targetRecord: RecordItem) => {
-    const elementId = `record-${targetRecord.id}`;
-    const el = document.getElementById(elementId);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setHighlightRecordId(targetRecord.id);
-      setTimeout(() => {
-        setHighlightRecordId(null);
-      }, 1600);
-    } else {
-      const targetDate = getLocalDateKey(targetRecord.created_at);
-      openDateRecord(targetDate);
-      setHighlightRecordId(targetRecord.id);
-      setTimeout(() => {
-        const targetEl = document.getElementById(elementId);
-        if (targetEl) {
-          targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        setTimeout(() => {
-          setHighlightRecordId(null);
-        }, 1600);
-      }, 250);
+    if (onJumpToRecord) {
+      onJumpToRecord(targetRecord);
+      return;
     }
+    setSelectedDate(getLocalDateKey(targetRecord.created_at));
+    flashRecord(targetRecord.id, 300);
   };
 
   const handleBranchClick = () => {
@@ -211,19 +236,17 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
   // Append images to the existing record (compress then merge into imgs)
   const handleAddImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    e.target.value = ''; // 允许再次选择同一文件
-    if (!files || files.length === 0) {
-      // Android WebView 下 display:none 文件框选择后可能返回空，此时仍给出反馈
+    const fileList = e.target.files ? Array.from(e.target.files) : [];
+    if (!fileList || fileList.length === 0) {
       showImageTip('未读取到所选图片，请重试', 'warning');
       return;
     }
 
     setIsProcessingImg(true);
-    setImgTip({ message: `正在处理 ${files.length} 张图片…`, tone: 'info' });
+    setImgTip({ message: `正在处理 ${fileList.length} 张图片…`, tone: 'info' });
     try {
       const current = item.imgs?.length ?? 0;
-      const { compressed, error } = await processImageFiles(files, current);
+      const { compressed, error } = await processImageFiles(fileList, current);
       if (compressed.length > 0) {
         const merged = [...(item.imgs ?? []), ...compressed].slice(0, MAX_NOTE_IMAGES);
         updateRecord(item.id, { imgs: merged });
@@ -239,11 +262,56 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
       showImageTip('图片处理失败，请重试', 'warning');
     } finally {
       setIsProcessingImg(false);
+      if (imgInputRef.current) imgInputRef.current.value = '';
     }
   };
 
+  const actionItems: Array<{ label: string; icon: React.ElementType; onClick?: () => void; keepOpen?: boolean; disabled?: boolean }> = isActionsExpanded ? [
+    { label: '編輯文字', icon: Pencil, onClick: () => setIsEditing(true) },
+    { label: '續寫', icon: GitBranch, onClick: handleBranchClick },
+    { label: '回覆', icon: Quote, onClick: handleQuoteClick },
+    { label: item.thread_id ? '更換思維線' : '關聯思維線', icon: Link2, onClick: handleThreadLinkClick },
+    ...(onOpenDeskPicker ? [{ label: item.desk_entry_id ? '更換抽屜' : '收進抽屜', icon: FolderOpen, onClick: () => onOpenDeskPicker(item.id) }] : []),
+    ...(onCreateDrawerFromRecord ? [{ label: '建立抽屜', icon: FolderPlus, onClick: () => onCreateDrawerFromRecord(item.id) }] : []),
+    { label: item.tag_id ? '更換標籤' : '打標籤', icon: Tag, onClick: () => onOpenTagPicker(item.id, item.tag_id) },
+    { label: item.eisenhower_quadrant ? '移出四象限' : '加入四象限', icon: LayoutGrid, onClick: () => { if (item.eisenhower_quadrant) updateRecord(item.id, { eisenhower_quadrant: null }); else setQuadrantModalOpen(true); } },
+    { label: item.value_priority ? '移出價值象限' : '加入價值象限', icon: Gem, onClick: () => { if (item.value_priority) updateRecord(item.id, { value_priority: null }); else setValueWizardOpen(true); } },
+    { label: '底色', icon: Palette, onClick: () => setShowColorPicker((prev) => !prev), keepOpen: true },
+    { label: item.is_pinned ? '取消置頂' : '置頂', icon: Pin, onClick: () => togglePinRecord(item.id) },
+    { label: '圖片', icon: Camera, onClick: () => imgInputRef.current?.click(), disabled: isProcessingImg },
+    { label: '錄音', icon: Mic, onClick: () => setAudioModalOpen(true) },
+    ...(hasChildren
+      ? [{ label: item.is_completed ? '取消群組完成' : '完成群組', icon: Check, onClick: () => toggleCompletedRecord(item.id) }]
+      : []),
+  ] : [];
+
+  const displayId = previewPath ? `record-preview-${previewPath}` : `record-${item.id}`;
+  if (previewPath && !isExpanded) {
+    return (
+      <button type="button" id={displayId} data-record-id={item.id} aria-expanded={false}
+        onClick={() => setIsExpanded(true)}
+        className="block w-full min-w-0 text-left rounded-lg border border-amber-100 bg-amber-50/40 px-2.5 py-2 hover:bg-amber-50">
+        <span className="flex items-center gap-1 text-[11px] text-amber-700">
+          <GitBranch className="w-3 h-3 shrink-0" />
+          {formatSimpleDate(item.created_at)}续写
+          <span className="ml-auto shrink-0">展开</span>
+        </span>
+        <span className="mt-1 line-clamp-2 break-words text-[13px] text-gray-700">
+          {item.text || (item.imgs?.length ? '图片记录' : item.audio ? '语音记录' : '记录')}
+        </span>
+        {!!(item.imgs?.length || item.audio) && <span className="text-[10px] text-gray-400">含{item.imgs?.length ? '图片' : ''}{item.audio ? ' 语音' : ''}</span>}
+      </button>
+    );
+  }
+
   return (
-    <div className="relative" id={`record-${item.id}`}>
+    <div className="relative min-w-0" id={displayId} data-record-id={item.id}>
+      {previewPath && <button type="button" aria-expanded={true}
+        onClick={() => setIsExpanded(false)}
+        className="flex w-full items-center gap-1 px-2.5 py-1 text-[11px] text-amber-700">
+        <GitBranch className="w-3 h-3" />{formatSimpleDate(item.created_at)}续写
+        <span className="ml-auto">收起</span>
+      </button>}
       {/*
         Node Row Container:
         - 每一层子分支由左侧父容器的虚线导轨引导 (border-l)
@@ -251,7 +319,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
       */}
       <div className="relative">
         {/* Horizontal Dashed Branch Connector for level > 0 */}
-        {level > 0 && (
+        {level > 0 && !checklist && (
           <>
             <div
               className="absolute pointer-events-none border-b-[1.5px] border-dashed border-slate-300"
@@ -278,7 +346,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
 
         {/* Row Content Card - scoped with 'group' so hover only triggers this row's actions */}
         <div
-          className={`relative group flex items-start py-2 px-2.5 rounded-lg transition-all duration-200 ${
+          className={`relative group flex items-start ${checklist ? 'ml-14 py-0.5 px-1 rounded-md' : 'py-2 px-2.5 rounded-lg'} transition-all duration-200 ${
             isHighlighted
               ? 'ring-2 ring-amber-400 bg-amber-50/90 shadow-md'
               : isBranchingThis
@@ -296,31 +364,39 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
             boxShadow: item.quote_color ? `inset 3px 0 0 0 ${item.quote_color}` : undefined,
           }}
         >
-          {/* Timestamp & 📌 Pin icon directly under hh:mm */}
-          <div className="flex flex-col items-center mr-2 flex-shrink-0 w-10 select-none">
-            <span className="text-[11.5px] font-mono text-gray-400 mt-0.5">
-              {formatTime(item.created_at)}
-            </span>
+          {/* 時間戳：清單模式下由行首勾選框取代 */}
+          {!checklist && (
+            <div className="flex flex-col items-center mr-2 flex-shrink-0 w-14 select-none">
+              <span className="text-[11.5px] font-mono text-gray-400 mt-0.5">
+                {formatTime(item.created_at)}
+              </span>
+            </div>
+          )}
+
+          {checklist && !hasChildren && (
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                togglePinRecord(item.id);
-              }}
-              className={`mt-1 p-0.5 rounded transition-all cursor-pointer ${
-                item.is_pinned
-                  ? 'text-amber-500 bg-amber-50 shadow-2xs scale-105'
-                  : 'min-w-9 min-h-9 text-gray-300 hover:text-amber-500 opacity-100 pointer-fine:opacity-0 group-hover:opacity-100'
+              onClick={() => toggleCompletedRecord(item.id)}
+              className={`mt-0.5 mr-1.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border text-[11px] transition-colors ${
+                item.is_completed
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-600'
+                  : 'border-gray-300 bg-white text-transparent hover:border-emerald-400'
               }`}
-              title={item.is_pinned ? '取消置顶气泡' : '置顶为浮动气泡'}
+              aria-label={item.is_completed ? '取消已完成' : '標記為已完成'}
             >
-              <Pin className={`w-3 h-3 ${item.is_pinned ? 'fill-amber-500' : ''}`} />
+              <Check className="h-3 w-3" />
             </button>
-          </div>
+          )}
+
+          {checklist && hasChildren && (
+            <span className="mt-0.5 mr-1.5 w-8 flex-shrink-0 text-center text-[10px] font-mono text-gray-400">
+              {groupDone}/{groupTotal}
+            </span>
+          )}
 
           {/* Main Content Area */}
           <div className="flex-1 min-w-0 pr-1">
-            {/* Upstream Quoted Note Card (引用 或 跨日分支退化) */}
+            {/* Source card for quotes and canonical cross-day branches */}
             {showUpstreamCard && (
               <div className="mb-1.5">
                 {upstreamRecord ? (
@@ -335,7 +411,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                     }}
                     title={item.quote_id ? '点击跳转到引用的原记录' : '点击跳转到跨日分支的父记录'}
                   >
-                    <Quote
+                    <UpstreamIcon
                       className="w-3 h-3 flex-shrink-0 group-hover/quote:scale-110 transition-transform"
                       style={{ color: upstreamColor ?? '#d97706' }}
                     />
@@ -343,7 +419,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                       className="text-[10px] font-medium flex-shrink-0"
                       style={{ color: upstreamColor ? `${upstreamColor}cc` : '#b45309' }}
                     >
-                      {formatShortDateTime(upstreamRecord.created_at)}
+                      {item.quote_id ? formatShortDateTime(upstreamRecord.created_at) : `分支自 ${formatSimpleDate(upstreamRecord.created_at)} ·`}
                     </span>
                     <span
                       className="text-[11px] truncate font-normal flex-1 min-w-0"
@@ -359,7 +435,7 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                   </button>
                 ) : (
                   <div className="text-[10.5px] text-gray-400 italic px-2 py-0.5 rounded bg-gray-50 border border-dashed border-gray-200">
-                    [原记录已移除]
+                    来源记录已删除
                   </div>
                 )}
               </div>
@@ -397,10 +473,21 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 {item.text && (
                   <div
                     onDoubleClick={() => setIsEditing(true)}
-                    className="text-[13.5px] text-gray-900 leading-snug break-words font-normal cursor-text select-text"
+                    className={`text-[13.5px] leading-snug break-words font-normal cursor-text select-text transition-colors ${
+                      item.is_completed ? 'text-gray-500 line-through' : 'text-gray-900'
+                    }`}
                     title="双击可直接修改文字"
                   >
                     {item.text}
+                    {hasChildren && !checklist && (
+                      <span
+                        className={`ml-1.5 inline-flex items-center rounded-full px-1.5 py-0.5 align-middle text-[10px] font-mono font-medium ${
+                          item.is_completed ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        {item.is_completed ? '✓ ' : ''}{groupDone}/{groupTotal}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -520,8 +607,8 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 </button>
               )}
 
-              {/* [标签] Tag Badge */}
-              {item.tag ? (
+              {/* [标签] Tag Badge（僅已打標籤時顯示，避免常駐入口） */}
+              {item.tag && (
                 <button
                   onClick={() => onOpenTagPicker(item.id, item.tag_id)}
                   className="inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded hover:opacity-80 transition-opacity cursor-pointer"
@@ -533,13 +620,17 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
                 >
                   <span>[{item.tag.name}]</span>
                 </button>
-              ) : (
+              )}
+
+              {/* 🪑 桌邊來源徽章：若記錄來自桌邊抽屜 */}
+              {item.desk_entry_id && (
                 <button
-                  onClick={() => onOpenTagPicker(item.id, null)}
-                  className="pointer-fine:opacity-0 group-hover:opacity-100 text-[10px] text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded border border-dashed border-gray-200 hover:border-gray-400 transition-all cursor-pointer"
-                  title="补打标签"
+                  onClick={() => onOpenDeskPicker?.(item.id)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                  title={`來自桌邊抽屜「${deskDrawerTitle || '桌邊'}」，點擊查看或移動`}
                 >
-                  +打标签
+                  <span>🪑</span>
+                  <span className="truncate max-w-[130px] font-semibold">{deskDrawerTitle ? `抽屜: ${deskDrawerTitle}` : '桌邊'}</span>
                 </button>
               )}
 
@@ -623,229 +714,124 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
           {/* Action Buttons: ✎ (Edit), ⎇ (Branch), 💬 (Quote), ⚭ (Link Thread), ✕ (Delete) */}
           {/* 当处于编辑模式(isEditing)时隐藏普通操作按钮，避免打勾保存/取消与分支按钮挤压与点击冲突 */}
           {!isEditing && (
-            <div className="grid grid-cols-3 gap-0.5 flex-shrink-0 pt-0.5 place-items-center">
-              {/* ✎ In-place Edit Button */}
-              <button
-                onClick={() => setIsEditing(true)}
-                className="p-1.5 text-gray-400 hover:text-gray-800 hover:bg-gray-100 rounded transition-all pointer-fine:opacity-0 group-hover:opacity-100"
-                title="修改文字 (双击亦可编辑)"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
-
-              {/* ⎇ Branch Button */}
-              <button
-                onClick={handleBranchClick}
-                className={`p-1.5 rounded transition-all flex items-center justify-center ${
-                  isBranchingThis
-                    ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400 font-bold'
-                    : 'text-gray-400 hover:text-gray-800 hover:bg-gray-100 pointer-fine:opacity-60 group-hover:opacity-100'
-                }`}
-                title={isBranchingThis ? '取消分支' : '新建分支子记录 (⎇)'}
-              >
-                <GitBranch className="w-3.5 h-3.5" />
-              </button>
-
-              {/* 💬 Quote Button */}
-              <button
-                onClick={handleQuoteClick}
-                className={`p-1.5 rounded transition-all flex items-center justify-center ${
-                  isQuotingThis
-                    ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400 font-bold opacity-100'
-                    : 'text-gray-400 hover:text-amber-700 hover:bg-amber-50 pointer-fine:opacity-60 group-hover:opacity-100'
-                }`}
-                title={isQuotingThis ? '取消引用' : '引用此记录 (💬)'}
-              >
-                <Quote className="w-3.5 h-3.5" />
-              </button>
-
-              {/* ⚭ Link Thread Button (Enhanced with quick direct linkage) */}
-              <button
-                onClick={handleThreadLinkClick}
-                className={`p-1.5 rounded transition-all ${
-                  activeQuickThread
-                    ? 'text-blue-600 bg-blue-50 ring-1 ring-blue-300 font-medium opacity-100'
-                    : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50 pointer-fine:opacity-60 group-hover:opacity-100'
-                }`}
-                title={
-                  activeQuickThread
-                    ? `点击直接关联至选中的「${activeQuickThread.title}」`
-                    : '关联到思维线 (⚭)'
-                }
-              >
-                <Link2 className="w-3.5 h-3.5" />
-              </button>
-
-              {/* 🎨 Palette Button for per-note background color */}
-              <div className="relative">
+            <div className="relative flex flex-col items-center gap-0.5 flex-shrink-0 pt-0.5">
+              {/* 預設只露三個：續寫、勾消、更多 */}
+              <div className="grid grid-cols-1 gap-0.5 place-items-center">
+                {!checklist && (
+                  <button
+                    onClick={handleBranchClick}
+                    className={`p-1.5 rounded transition-all flex items-center justify-center ${
+                      isBranchingThis
+                        ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400 font-bold'
+                        : 'text-gray-400 hover:text-gray-800 hover:bg-gray-100 pointer-fine:opacity-60 group-hover:opacity-100'
+                    }`}
+                    title={isBranchingThis ? '取消续写' : '从这里续写'}
+                  >
+                    <GitBranch className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {!checklist && !hasChildren && (
+                  <button
+                    onClick={() => toggleCompletedRecord(item.id)}
+                    className={`p-1.5 rounded transition-all flex items-center justify-center ${
+                      item.is_completed
+                        ? 'text-emerald-600 bg-emerald-50 ring-1 ring-emerald-200'
+                        : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 pointer-fine:opacity-60 group-hover:opacity-100'
+                    }`}
+                    title={item.is_completed ? '取消已完成' : '标记为已完成'}
+                    aria-pressed={Boolean(item.is_completed)}
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => setShowColorPicker((prev) => !prev)}
-                  className={`p-1.5 rounded transition-all ${
-                    item.bg_color
-                      ? 'text-amber-700 bg-amber-100/80 ring-1 ring-amber-300 font-medium opacity-100'
-                      : 'text-gray-400 hover:text-amber-700 hover:bg-amber-50 pointer-fine:opacity-60 group-hover:opacity-100'
+                  onClick={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setMenuPlacement(window.innerHeight - rect.bottom < 360 ? 'up' : 'down');
+                    setIsActionsExpanded((prev) => !prev);
+                  }}
+                  className={`relative p-1.5 rounded transition-all flex items-center justify-center ${
+                    isActionsExpanded
+                      ? 'text-blue-600 bg-blue-50 ring-1 ring-blue-300 opacity-100'
+                      : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 pointer-fine:opacity-60 group-hover:opacity-100'
                   }`}
-                  title="设置便签背景颜色 (🎨)"
+                  title={isActionsExpanded ? '收起更多操作' : '展开更多操作'}
+                  aria-expanded={isActionsExpanded}
                 >
-                  <Palette className="w-3.5 h-3.5" />
+                  {isActionsExpanded ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <MoreHorizontal className="w-3.5 h-3.5" />
+                  )}
                 </button>
-
-                {/* Color Picker Popover */}
-                {showColorPicker && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-30"
-                      onClick={() => setShowColorPicker(false)}
-                    />
-                    <div className="absolute right-0 bottom-full mb-2 z-40 w-48 bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-gray-200/90 p-2.5 animate-in fade-in zoom-in-95 duration-150 select-none">
-                      <div className="flex items-center justify-between text-[11px] font-medium text-gray-500 mb-2 pb-1 border-b border-gray-100">
-                        <span className="flex items-center gap-1">
-                          <Palette className="w-3 h-3 text-amber-600" />
-                          便签背景底色
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            updateRecord(item.id, { bg_color: null });
-                            setShowColorPicker(false);
-                          }}
-                          className="text-[10px] text-gray-400 hover:text-red-600 transition-colors"
-                        >
-                          默认无色
-                        </button>
-                      </div>
-
-                      {/* 预设低饱和马卡龙/手账便签底色 */}
-                      <div className="grid grid-cols-4 gap-1.5 mb-2">
-                        {[
-                          { name: '柠檬浅黄', color: '#FEF9C3' },
-                          { name: '柔和杏粉', color: '#FFE4E6' },
-                          { name: '薄荷浅绿', color: '#DCFCE7' },
-                          { name: '冰雾浅蓝', color: '#E0F2FE' },
-                          { name: '薰衣草紫', color: '#F3E8FF' },
-                          { name: '暖橙浅麦', color: '#FFEDD5' },
-                          { name: '恬淡浅青', color: '#CCFBF1' },
-                          { name: '典雅浅灰', color: '#F1F5F9' },
-                        ].map((c) => (
-                          <button
-                            key={c.color}
-                            type="button"
-                            onClick={() => {
-                              updateRecord(item.id, { bg_color: c.color });
-                              setShowColorPicker(false);
-                            }}
-                            className={`w-8 h-8 rounded-lg border transition-all flex items-center justify-center ${
-                              item.bg_color === c.color
-                                ? 'border-gray-900 scale-110 shadow-xs'
-                                : 'border-gray-200/90 hover:scale-105 hover:border-gray-400'
-                            }`}
-                            style={{ backgroundColor: c.color }}
-                            title={c.name}
-                          >
-                            {item.bg_color === c.color && (
-                              <Check className="w-3.5 h-3.5 text-gray-800" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* 自定义颜色取色器 */}
-                      <label className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer text-[11px] text-gray-700 transition-colors">
-                        <span className="flex items-center gap-1.5">
-                          <Sparkles className="w-3 h-3 text-blue-500" />
-                          自定义颜色
-                        </span>
-                        <input
-                          type="color"
-                          value={item.bg_color || '#ffffff'}
-                          onChange={(e) => {
-                            updateRecord(item.id, { bg_color: e.target.value });
-                          }}
-                          className="w-5 h-5 rounded cursor-pointer border-0 p-0 bg-transparent"
-                        />
-                      </label>
-                    </div>
-                  </>
-                )}
               </div>
 
-              {/* ··· More / Expand 3rd Row Toggle Button (Slot 6) */}
-              <button
-                type="button"
-                onClick={() => setIsActionsExpanded((prev) => !prev)}
-                className={`relative p-1.5 rounded transition-all flex items-center justify-center ${
-                  isActionsExpanded
-                    ? 'text-blue-600 bg-blue-50 ring-1 ring-blue-300 opacity-100'
-                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 pointer-fine:opacity-60 group-hover:opacity-100'
-                }`}
-                title={isActionsExpanded ? '收起更多操作' : '展开更多操作 (📷图片 / 🎙️录音 / 🏷️标签 / ✕删除)'}
-              >
-                {isActionsExpanded ? (
-                  <ChevronUp className="w-3.5 h-3.5 text-blue-600" />
-                ) : (
-                  <>
-                    <MoreHorizontal className="w-3.5 h-3.5" />
-                    {/* 微小状态提示点：如果该记录已附带图片或音频 */}
-                    {(item.imgs?.length || item.audio || item.tag) ? (
-                      <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-500 ring-1 ring-white" />
-                    ) : null}
-                  </>
-                )}
-              </button>
-
-              {/* Row 3 (Dynamically rendered only when expanded) */}
               {isActionsExpanded && (
                 <>
-                  {/* 📷 Add / Manage Image Button */}
-                  <button
-                    type="button"
-                    onClick={() => imgInputRef.current?.click()}
-                    disabled={isProcessingImg}
-                    className={`p-1.5 rounded transition-all flex items-center justify-center animate-in fade-in slide-in-from-top-1 duration-150 ${
-                      item.imgs && item.imgs.length > 0
-                        ? 'text-sky-600 bg-sky-50 ring-1 ring-sky-300 font-medium opacity-100'
-                        : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50 opacity-80 hover:opacity-100'
-                    }`}
-                    title={
-                      item.imgs && item.imgs.length > 0
-                        ? `追加/管理图片 (已附带 ${item.imgs.length}/${MAX_NOTE_IMAGES} 张)`
-                        : '为此记录添加图片/随手拍 (📷)'
-                    }
-                  >
-                    {isProcessingImg ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500" />
-                    ) : (
-                      <Camera className="w-3.5 h-3.5" />
+                  <div className="fixed inset-0 z-30" onClick={() => setIsActionsExpanded(false)} />
+                  <div className={`absolute right-0 z-40 w-56 max-h-[70vh] overflow-y-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl ${menuPlacement === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+                    <div className="grid grid-cols-2 gap-0.5">
+                      {actionItems.map((entry) => {
+                        const Icon = entry.icon;
+                        return (
+                          <button
+                            key={entry.label}
+                            type="button"
+                            onClick={() => { entry.onClick?.(); if (!entry.keepOpen) setIsActionsExpanded(false); }}
+                            disabled={entry.disabled}
+                            className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-left text-[11px] text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                          >
+                            <Icon className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                            <span className="truncate">{entry.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {showColorPicker && (
+                      <div className="mt-1 border-t border-gray-100 pt-1.5">
+                        <div className="grid grid-cols-8 gap-1">
+                          {['#FEF9C3', '#FFE4E6', '#DCFCE7', '#E0F2FE', '#F3E8FF', '#FFEDD5', '#CCFBF1', '#F1F5F9'].map((color) => (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => { updateRecord(item.id, { bg_color: color }); setShowColorPicker(false); }}
+                              className={`h-5 w-5 rounded transition-transform hover:scale-105 ${
+                                item.bg_color === color ? 'ring-2 ring-gray-900 ring-offset-1' : 'border border-gray-200'
+                              }`}
+                              style={{ backgroundColor: color }}
+                              aria-label={`底色 ${color}`}
+                            />
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { updateRecord(item.id, { bg_color: null }); setShowColorPicker(false); }}
+                          className="mt-1 text-left text-[10px] text-gray-400 hover:text-gray-700"
+                        >
+                          清除底色
+                        </button>
+                        <label className="mt-1 flex items-center gap-1.5 text-[10px] text-gray-400">
+                          自訂
+                          <input
+                            type="color"
+                            value={item.bg_color || '#ffffff'}
+                            onChange={(event) => updateRecord(item.id, { bg_color: event.target.value })}
+                            className="h-5 w-5 rounded border-0 bg-transparent p-0"
+                          />
+                        </label>
+                      </div>
                     )}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDeleteModalOpen(true); setIsActionsExpanded(false); }}
+                      className="mt-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left text-[11px] text-red-600 transition-colors hover:bg-red-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      <span>刪除</span>
+                    </button>
+                  </div>
 
-                  {/* 🎙️ Voice Memo / Mic Recording Button */}
-                  <button
-                    type="button"
-                    onClick={() => setAudioModalOpen(true)}
-                    className={`p-1.5 rounded transition-all flex items-center justify-center animate-in fade-in slide-in-from-top-1 duration-150 ${
-                      item.audio
-                        ? 'text-indigo-600 bg-indigo-50 ring-1 ring-indigo-300 font-medium opacity-100'
-                        : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 opacity-80 hover:opacity-100'
-                    }`}
-                    title={
-                      item.audio
-                        ? `管理/重新录制语音 (${item.audio.duration}s)`
-                        : '为此记录录制语音便签 (🎙️)'
-                    }
-                  >
-                    {item.audio ? <Volume2 className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                  </button>
-
-                  {/* Delete button (Pops up confirmation modal) */}
-                  <button
-                    onClick={() => setDeleteModalOpen(true)}
-                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded opacity-80 hover:opacity-100 transition-all animate-in fade-in slide-in-from-top-1 duration-150"
-                    title="删除记录 (✕)"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
                 </>
               )}
             </div>
@@ -861,11 +847,31 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
         initialAudio={item.audio}
       />
 
+      <EisenhowerQuadrantModal
+        isOpen={quadrantModalOpen}
+        title={item.text}
+        current={item.eisenhower_quadrant}
+        onClose={() => setQuadrantModalOpen(false)}
+        onSelect={(quadrant) => {
+          updateRecord(item.id, { eisenhower_quadrant: quadrant });
+          setQuadrantModalOpen(false);
+        }}
+      />
+
+      <ValuePriorityWizard
+        isOpen={valueWizardOpen}
+        record={item}
+        onClose={() => setValueWizardOpen(false)}
+      />
+
       {/* Delete Confirmation Modal */}
       <ConfirmDeleteModal
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
-        onConfirm={() => deleteRecord(item.id)}
+        onConfirm={() => {
+          const deletedRecords = deleteRecord(item.id);
+          onRecordsDeleted?.(deletedRecords);
+        }}
         recordText={item.text}
         hasChildren={hasChildren}
       />
@@ -896,17 +902,32 @@ export const RecordItemRow: React.FC<RecordItemRowProps> = ({
         方案 B: 连续虚线左边框 (border-l-[1.5px] border-dashed border-slate-300)
       */}
       {hasChildren && (
-        <div className="relative ml-[22px] pl-[12px] border-l-[1.5px] border-dashed border-slate-300 my-0.5 space-y-0.5">
-          {item.children!.map((child, idx) => (
-            <RecordItemRow
-              key={child.id}
-              item={child}
-              level={level + 1}
-              isLastChild={idx === item.children!.length - 1}
-              onOpenThreadPicker={onOpenThreadPicker}
-              onOpenTagPicker={onOpenTagPicker}
-            />
-          ))}
+        <div className={
+          childChecklist
+            ? 'relative mt-1 ml-1 pl-1 space-y-0.5'
+            : `relative ${level < 2 ? 'ml-[10px] pl-[12px]' : 'ml-0 pl-1'} border-l-[1.5px] border-dashed border-slate-300 my-0.5 space-y-0.5`
+        }>
+          {item.children!.map((child, idx) => {
+            const currentPageKey = page?.key ?? displayDate;
+            return (
+              <RecordItemRow
+                key={child.id}
+                item={child}
+                level={level + 1}
+                checklist={childChecklist}
+                displayDate={displayDate}
+                page={page}
+                onJumpToRecord={onJumpToRecord}
+                previewPath={childPreviewPath(page, currentPageKey, item.id, previewPath, child)}
+                isLastChild={idx === item.children!.length - 1}
+                onOpenThreadPicker={onOpenThreadPicker}
+                onOpenTagPicker={onOpenTagPicker}
+                onOpenDeskPicker={onOpenDeskPicker}
+                onCreateDrawerFromRecord={onCreateDrawerFromRecord}
+                onRecordsDeleted={onRecordsDeleted}
+              />
+            );
+          })}
         </div>
       )}
     </div>

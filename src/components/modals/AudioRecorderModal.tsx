@@ -3,6 +3,7 @@ import { Mic, Square, X, Check, Loader2 } from 'lucide-react';
 import { createRecordingSession, formatTimerSeconds, RecordingSession } from '../../utils/audioUtils';
 import { AudioAttachment } from '../../types';
 import { AudioPlayerPill } from '../common/AudioPlayerPill';
+import { useSystemBack } from '../../hooks/useSystemBack';
 
 interface AudioRecorderModalProps {
   isOpen: boolean;
@@ -27,6 +28,8 @@ export const AudioRecorderModal: React.FC<AudioRecorderModalProps> = ({
 
   const timerRef = useRef<number | null>(null);
   const recordingSessionRef = useRef<RecordingSession | null>(null);
+
+  useSystemBack(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {

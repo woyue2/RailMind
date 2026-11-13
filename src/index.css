@@ -33,6 +33,14 @@
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
 }
 
+.daily-page-scroller {
+  scrollbar-width: none;
+}
+
+.daily-page-scroller::-webkit-scrollbar {
+  display: none;
+}
+
 /* Custom subtle scrollbar */
 ::-webkit-scrollbar {
   width: 4px;
@@ -69,3 +77,40 @@
 .review-card-scroll::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
 }
+
+/* Keep keyboard navigation visible in the browser. */
+button:focus-visible, a:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+@media (min-width: 768px) {
+  .app-workspace .record-header,
+  .app-workspace .record-input-bar {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+/* Desktop Edge Mode transparent root & acrylic frosted glass */
+html.desk-edge-mode,
+body.desk-edge-mode,
+html.desk-edge-mode #root,
+body.desk-edge-mode #root {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden;
+}
+
+.desk-edge-mode .bg-\[\#f7faf8\] {
+  background-color: rgba(248, 250, 252, 0.82) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+
+.desk-edge-mode header.bg-white {
+  background-color: rgba(255, 255, 255, 0.88) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+

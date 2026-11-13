@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, X } from 'lucide-react';
+import { useSystemBack } from '../../hooks/useSystemBack';
 
 interface HomeLinkModalProps {
   isOpen: boolean;
@@ -11,6 +12,8 @@ interface HomeLinkModalProps {
 export const HomeLinkModal = ({ isOpen, initialValue, onClose, onConfirm }: HomeLinkModalProps) => {
   const [shownName, setShownName] = useState('');
   const [href, setHref] = useState('');
+
+  useSystemBack(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {

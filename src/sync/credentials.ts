@@ -42,31 +42,43 @@ export function saveR2Settings(settings: R2Config): void {
   }
 }
 
+function readSecret(key: string): string {
+  return localStorage.getItem(key) ?? '';
+}
+
+function writeSecret(key: string, value: string): void {
+  const trimmed = value.trim();
+  if (trimmed) {
+    localStorage.setItem(key, trimmed);
+  } else {
+    localStorage.removeItem(key);
+  }
+}
+
 export function getSecretAccessKey(): string {
-  return localStorage.getItem(R2_SECRET_KEY) ?? '';
+  return readSecret(R2_SECRET_KEY);
 }
 
 export function setSecretAccessKey(value: string): void {
-  const trimmed = value.trim();
-  if (trimmed) {
-    localStorage.setItem(R2_SECRET_KEY, trimmed);
-  } else {
-    localStorage.removeItem(R2_SECRET_KEY);
-  }
+  writeSecret(R2_SECRET_KEY, value);
 }
 
 export function clearSecretAccessKey(): void {
   localStorage.removeItem(R2_SECRET_KEY);
 }
 
-export function isR2Configured(): boolean {
-  const settings = loadR2Settings();
+/** 設定是否足以建立同步連線（不讀 localStorage，供呼叫方複用已載入的設定）。 */
+export function isR2ConfigUsable(settings: R2Config): boolean {
   return Boolean(
     settings.accountId.trim() &&
     settings.accessKeyId.trim() &&
     settings.bucketName.trim() &&
-    getSecretAccessKey().trim()
+    settings.secretAccessKey.trim()
   );
+}
+
+export function isR2Configured(): boolean {
+  return isR2ConfigUsable(loadR2Settings());
 }
 
 // Tombstone persistence
@@ -85,4 +97,21 @@ export function saveTombstoneRecord(tombstone: SyncTombstone): void {
   );
   list.push(tombstone);
   localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(list));
+}
+
+/**
+ * 清除指定实体的本地墓碑记录。
+ * 用于「删除后撤销恢复」场景：恢复实体时必须同步移除墓碑，
+ * 否则后续 push/sync 会因 isDeleted 短路而永久跳过该实体。
+ */
+export function removeTombstoneRecords(
+  entityType: SyncTombstone['entityType'],
+  entityIds: string[]
+): void {
+  if (!entityIds.length) return;
+  const removing = new Set(entityIds);
+  const remaining = loadTombstones().filter(
+    (t) => !(t.entityType === entityType && removing.has(t.entityId))
+  );
+  localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(remaining));
 }

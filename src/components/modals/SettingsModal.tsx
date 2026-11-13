@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Cloud, CheckCircle, AlertCircle, RefreshCw, X, Shield, HardDrive } from 'lucide-react';
+import { Settings, CheckCircle, AlertCircle, RefreshCw, X, HardDrive } from 'lucide-react';
+import { useFlowStore } from '../../store/useFlowStore';
 import {
   loadR2Settings,
   saveR2Settings,
-  isR2Configured,
   defaultR2Config,
+  isR2ConfigUsable,
 } from '../../sync/credentials';
 import { testR2Connection, triggerR2Sync } from '../../sync';
 import { R2Config, SyncReport } from '../../sync/types';
+import { useSystemBack } from '../../hooks/useSystemBack';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -15,12 +17,18 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+  const timelineDateHeaderBackgroundOpacity = useFlowStore((state) => state.timelineDateHeaderBackgroundOpacity);
+  const dailyPageDateHeaderBackgroundOpacity = useFlowStore((state) => state.dailyPageDateHeaderBackgroundOpacity);
+  const setTimelineDateHeaderBackgroundOpacity = useFlowStore((state) => state.setTimelineDateHeaderBackgroundOpacity);
+  const setDailyPageDateHeaderBackgroundOpacity = useFlowStore((state) => state.setDailyPageDateHeaderBackgroundOpacity);
   const [settings, setSettings] = useState<R2Config>(defaultR2Config);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useSystemBack(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {
@@ -32,6 +40,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const configured = isR2ConfigUsable(settings);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,11 +99,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-white sticky top-0 z-10">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Cloud className="w-4 h-4" />
+              <Settings className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-gray-900">云端存储与同步设置</h3>
-              <p className="text-[11px] text-gray-400">Cloudflare R2 直连备份与跨端同步</p>
+              <h3 className="text-base font-semibold text-gray-900">设置</h3>
+              <p className="text-[11px] text-gray-400">显示与云端同步</p>
             </div>
           </div>
           <button
@@ -106,6 +116,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
         {/* Content Body */}
         <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+          <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/80 p-3.5">
+            <div>
+              <div className="text-[13px] font-semibold text-gray-900">日期标题背景透明度</div>
+              <div className="mt-0.5 text-[11px] text-gray-400">两个浏览模式单独设置，调整后立即生效</div>
+            </div>
+            {[
+              {
+                label: '时间流',
+                value: timelineDateHeaderBackgroundOpacity,
+                setValue: setTimelineDateHeaderBackgroundOpacity,
+              },
+              {
+                label: '翻页',
+                value: dailyPageDateHeaderBackgroundOpacity,
+                setValue: setDailyPageDateHeaderBackgroundOpacity,
+              },
+            ].map((option) => (
+              <div key={option.label}>
+                <div className="mb-1 flex items-center justify-between text-[11px]">
+                  <span className="font-medium text-gray-600">{option.label}</span>
+                  <span className="min-w-10 text-right font-mono font-medium text-amber-800">{option.value}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={option.value}
+                  onChange={(event) => option.setValue(Number(event.target.value))}
+                  className="h-2 w-full cursor-pointer accent-amber-700"
+                  aria-label={`${option.label}日期标题背景透明度`}
+                />
+              </div>
+            ))}
+            <div className="flex justify-between text-[10px] text-gray-400">
+              <span>透明</span>
+              <span>不透明</span>
+            </div>
+          </div>
+
           {/* Toggle Enable */}
           <div className="flex items-center justify-between p-3.5 bg-gray-50/80 rounded-xl border border-gray-100">
             <div>
@@ -125,70 +175,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             </label>
           </div>
 
-          {/* R2 Credentials Form */}
+          {/* Sync Credentials Form */}
           <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between text-gray-700 font-medium">
-              <span>Cloudflare R2 凭据配置</span>
-              <span className="text-[10.5px] text-gray-400 flex items-center gap-1">
-                <Shield className="w-3 h-3 text-emerald-500" />
-                本地加密签名，零中转
-              </span>
-            </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Account ID (Cloudflare 账户 ID)</label>
+                  <input
+                    type="text"
+                    value={settings.accountId}
+                    onChange={(e) => setSettings({ ...settings, accountId: e.target.value })}
+                    placeholder="例如: a1b2c3d4e5f6..."
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-gray-500 mb-1">Account ID (Cloudflare 账户 ID)</label>
-              <input
-                type="text"
-                value={settings.accountId}
-                onChange={(e) => setSettings({ ...settings, accountId: e.target.value })}
-                placeholder="例如: a1b2c3d4e5f6..."
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
-              />
-            </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">R2 Bucket Name (存储桶名称)</label>
+                  <input
+                    type="text"
+                    value={settings.bucketName}
+                    onChange={(e) => setSettings({ ...settings, bucketName: e.target.value })}
+                    placeholder="例如: flow-backup"
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-gray-500 mb-1">R2 Bucket Name (存储桶名称)</label>
-              <input
-                type="text"
-                value={settings.bucketName}
-                onChange={(e) => setSettings({ ...settings, bucketName: e.target.value })}
-                placeholder="例如: flow-backup"
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
-              />
-            </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Access Key ID</label>
+                  <input
+                    type="text"
+                    value={settings.accessKeyId}
+                    onChange={(e) => setSettings({ ...settings, accessKeyId: e.target.value })}
+                    placeholder="R2 API Token Access Key ID"
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-gray-500 mb-1">Access Key ID</label>
-              <input
-                type="text"
-                value={settings.accessKeyId}
-                onChange={(e) => setSettings({ ...settings, accessKeyId: e.target.value })}
-                placeholder="R2 API Token Access Key ID"
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
-              />
-            </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Secret Access Key</label>
+                  <input
+                    type="password"
+                    value={settings.secretAccessKey}
+                    onChange={(e) => setSettings({ ...settings, secretAccessKey: e.target.value })}
+                    placeholder="••••••••••••••••••••••••••••••••"
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-gray-500 mb-1">Secret Access Key</label>
-              <input
-                type="password"
-                value={settings.secretAccessKey}
-                onChange={(e) => setSettings({ ...settings, secretAccessKey: e.target.value })}
-                placeholder="••••••••••••••••••••••••••••••••"
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-400 mb-1">自定义 Endpoint（可选，留空则自动根据 Account ID 生成）</label>
-              <input
-                type="text"
-                value={settings.endpoint || ''}
-                onChange={(e) => setSettings({ ...settings, endpoint: e.target.value })}
-                placeholder="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
-                className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono text-gray-500"
-              />
-            </div>
+                <div>
+                  <label className="block text-gray-400 mb-1">自定义 Endpoint（可选，留空则自动根据 Account ID 生成）</label>
+                  <input
+                    type="text"
+                    value={settings.endpoint || ''}
+                    onChange={(e) => setSettings({ ...settings, endpoint: e.target.value })}
+                    placeholder="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
+                    className="w-full px-3 py-2 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono text-gray-500"
+                  />
+                </div>
           </div>
 
           {/* Test & Sync Actions Bar */}
@@ -206,7 +248,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             <button
               type="button"
               onClick={handleManualSync}
-              disabled={syncing || !isR2Configured()}
+              disabled={syncing || !configured}
               className="px-3.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
             >
               {syncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" /> : <RefreshCw className="w-3.5 h-3.5" />}
